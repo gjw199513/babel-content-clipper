@@ -33,6 +33,7 @@ interface BrokerPeer {
   readonly decoder: NativeMessageDecoder;
   role: PeerRole;
   profileId?: string;
+  mcpVersion?: string;
   closed: boolean;
 }
 
@@ -55,7 +56,13 @@ export interface BrokerStatus {
   socketPath: string;
   connectedProfiles: Array<{ profileId: string; connected: boolean }>;
   mcpClients: number;
+  mcpClientVersions: string[];
   pendingRequests: number;
+}
+
+function validMcpVersion(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 128
+    && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
 }
 
 function secretMatches(received: unknown, expected: string): boolean {
@@ -189,6 +196,9 @@ export class LocalBroker {
       socketPath: this.options.config.socketPath,
       connectedProfiles: [...this.profiles.entries()].map(([profileId, peer]) => ({ profileId, connected: !peer.closed })),
       mcpClients: [...this.peers].filter((peer) => peer.role === "mcp" && !peer.closed).length,
+      mcpClientVersions: [...this.peers]
+        .filter((peer) => peer.role === "mcp" && !peer.closed && peer.mcpVersion !== undefined)
+        .map((peer) => peer.mcpVersion!),
       pendingRequests: this.pending.size,
     };
   }
@@ -279,9 +289,12 @@ export class LocalBroker {
       }
       if (role === "mcp") {
         const profileId = assertProfileId(request.profileId ?? request.params.profileId);
+        const mcpVersion = request.params.mcp_version;
+        if (!validMcpVersion(mcpVersion)) throw socketError("MCP_VERSION_REQUIRED", "An MCP client must identify its package version.");
         peer.role = "mcp";
         peer.profileId = profileId;
-        this.send(peer, successResponse(request.id, { connected: true, role, profileId }, profileId));
+        peer.mcpVersion = mcpVersion;
+        this.send(peer, successResponse(request.id, { connected: true, role, profileId, mcp_version: mcpVersion }, profileId));
         return;
       }
       if (request.profileId !== undefined) throw socketError("INVALID_REQUEST", "A native host establishes its profile through bridge.hello.");

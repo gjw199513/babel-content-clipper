@@ -6,6 +6,7 @@ import {
   isCoreUiMessage,
   isExtensionPageSender,
   isRecorderMessage,
+  isSourceStreamMessage,
   type ContentReplyMessage,
   type CoreUiMessage,
   type NativeMethod,
@@ -37,6 +38,7 @@ const ACTION_BADGE_CLEAR_ALARM = "babel_content_clipper.action_badge_clear.v1";
 const OFFSCREEN_PATH = "offscreen.html";
 const MAX_RECORDING_BYTES = 256 * 1024 * 1024;
 const MAX_RECORDING_CHUNK_BYTES = 512 * 1024;
+const MAX_SOURCE_CHUNK_BYTES = 512 * 1024;
 
 interface OpenMedia {
   captureId: string;
@@ -110,6 +112,34 @@ interface RecordingState {
 
 const contentRequests = new Map<string, { resolve: (reply: ContentReplyMessage) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; tabId: number; frameId: number }>();
 const recordings = new Map<string, RecordingState>();
+
+interface SourceStreamState {
+  readonly requestId: string;
+  readonly captureId: string;
+  readonly jobId: string;
+  readonly attachmentId: string;
+  readonly tabId: number;
+  readonly frameId: number;
+  mimeType: string;
+  offset: number;
+  queue: Promise<void>;
+  terminal: boolean;
+  resolve: (value: SourceAcquisitionResult) => void;
+  reject: (error: Error) => void;
+  readonly completion: Promise<SourceAcquisitionResult>;
+}
+
+interface SourceAcquisitionResult {
+  readonly captureId: string;
+  readonly jobId: string;
+  readonly attachmentId: string;
+  readonly mimeType: string;
+  readonly byteLength: number;
+  readonly acquisition: "extension_background_fetch" | "extension_page_fetch";
+  readonly browserPlugin: "babel_content_clipper";
+}
+
+const sourceStreams = new Map<string, SourceStreamState>();
 let profileIdPromise: Promise<string> | undefined;
 let offscreenCreating: Promise<void> | undefined;
 let reminders: ReturnType<typeof createReminderController>;
@@ -216,8 +246,8 @@ async function runCore<T = unknown>(method: string, params: unknown): Promise<T>
   return result as T;
 }
 
-function requestContent(tabId: number, command: "capture_selection" | "capture_media" | "begin_region", context?: Record<string, unknown>): Promise<ContentReplyMessage> {
-  const requestId = crypto.randomUUID();
+function requestContent(tabId: number, command: "capture_selection" | "capture_media" | "begin_region" | "acquire_media", context?: Record<string, unknown>): Promise<ContentReplyMessage> {
+  const requestId = typeof context?.requestId === "string" && context.requestId.length > 0 ? context.requestId : crypto.randomUUID();
   const frameId = typeof context?.frameId === "number" && Number.isInteger(context.frameId) && context.frameId >= 0 ? context.frameId : 0;
   return new Promise((resolve, reject) => {
     const timer = globalThis.setTimeout(() => {
@@ -247,9 +277,42 @@ async function tabFromSender(sender: chrome.runtime.MessageSender): Promise<chro
   return chrome.tabs.get(sender.tab.id);
 }
 
-async function sourceForTab(tabId: number): Promise<{ url: string; title: string }> {
+async function sourceForTab(tabId: number): Promise<{ url: string; acquisitionUrl?: string; title: string }> {
   const tab = await chrome.tabs.get(tabId);
-  return { url: redactUrl(tab.url ?? "about:blank"), title: tab.title?.trim() || new URL(tab.url ?? "about:blank").hostname || "未命名来源" };
+  const acquisitionUrl = typeof tab.url === "string" ? tab.url : undefined;
+  return { url: redactUrl(tab.url ?? "about:blank"), ...(acquisitionUrl ? { acquisitionUrl } : {}), title: tab.title?.trim() || new URL(tab.url ?? "about:blank").hostname || "未命名来源" };
+}
+
+function normalizedContentContext(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const array = (candidate: unknown, limit: number, maxChars: number): string[] => Array.isArray(candidate)
+    ? candidate
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => truncateText(item.replace(/\s+/gu, " ").trim(), maxChars))
+        .filter(Boolean)
+        .slice(0, limit)
+    : [];
+  const descriptions = array(input.descriptions, 4, 8_000);
+  const tags = array(input.tags, 100, 120);
+  const commentCandidates = array(input.comments, 50, 800);
+  const comments: string[] = [];
+  let commentChars = 0;
+  for (const comment of commentCandidates) {
+    if (commentChars + comment.length > 16_000) break;
+    comments.push(comment);
+    commentChars += comment.length;
+  }
+  if (descriptions.length === 0 && tags.length === 0 && comments.length === 0) return undefined;
+  return {
+    descriptions,
+    tags,
+    comments,
+    omittedCommentCount: typeof input.omittedCommentCount === "number" &&
+      Number.isFinite(input.omittedCommentCount) && input.omittedCommentCount >= 0
+      ? Math.floor(input.omittedCommentCount) + (commentCandidates.length - comments.length)
+      : commentCandidates.length - comments.length,
+  };
 }
 
 function normalizedSource(source: Record<string, unknown>, fallbackUrl = "about:blank", frameId?: number): Record<string, unknown> {
@@ -257,10 +320,30 @@ function normalizedSource(source: Record<string, unknown>, fallbackUrl = "about:
   const canonicalUrl = typeof source.canonicalUrl === "string" && source.canonicalUrl
     ? redactUrl(source.canonicalUrl)
     : undefined;
+  const acquisitionUrl = typeof source.acquisitionUrl === "string" && source.acquisitionUrl
+    ? source.acquisitionUrl
+    : undefined;
+  const mediaAcquisitionUrl = typeof source.mediaAcquisitionUrl === "string" && source.mediaAcquisitionUrl
+    ? source.mediaAcquisitionUrl
+    : undefined;
+  const incomingMetadata = source.metadata && typeof source.metadata === "object" && !Array.isArray(source.metadata)
+    ? source.metadata as Record<string, unknown>
+    : undefined;
+  const contentContext = normalizedContentContext(incomingMetadata?.contentContext);
   let site = "unknown";
   try { site = new URL(pageUrl).hostname || "unknown"; } catch { /* keep unknown */ }
   const frame = typeof source.documentInstanceId === "string" || typeof frameId === "number" ? { ...(typeof frameId === "number" ? { frameId } : {}), ...(typeof source.documentInstanceId === "string" ? { documentId: source.documentInstanceId } : {}), ...(typeof source.frameUrl === "string" ? { frameUrl: redactUrl(source.frameUrl) } : {}) } : undefined;
-  return { title: typeof source.title === "string" ? truncateText(source.title, 4096) : "未命名来源", pageUrl, ...(canonicalUrl ? { canonicalUrl } : {}), site, identityConfidence: "page_reported", ...(frame ? { frame } : {}) };
+  return {
+    title: typeof source.title === "string" ? truncateText(source.title, 4096) : "未命名来源",
+    pageUrl,
+    ...(acquisitionUrl ? { acquisitionUrl } : {}),
+    ...(mediaAcquisitionUrl ? { mediaAcquisitionUrl } : {}),
+    ...(canonicalUrl ? { canonicalUrl } : {}),
+    site,
+    identityConfidence: "page_reported",
+    ...(frame ? { frame } : {}),
+    ...(contentContext === undefined ? {} : { metadata: { contentContext } }),
+  };
 }
 
 function selectionImagePlan(selection: Record<string, unknown>): SelectionImagePlan {
@@ -378,6 +461,307 @@ async function persistAttachment(dataBase64: string, mimeType: string, kind: "so
   }
   await runCore("attachment.complete", { requestId: crypto.randomUUID(), attachmentId, totalBytes: bytes.byteLength });
   return attachmentId;
+}
+
+interface SourceAcquisitionInput {
+  readonly requestId: string;
+  readonly captureId: string;
+  readonly jobId: string;
+  readonly claimToken: string;
+}
+
+function sourceAcquisitionInput(value: unknown): SourceAcquisitionInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw failure("VALIDATION_ERROR", "媒体取源请求必须是对象。");
+  const input = value as Record<string, unknown>;
+  const fields = ["requestId", "captureId", "jobId", "claimToken"] as const;
+  if (fields.some(field => typeof input[field] !== "string" || !(input[field] as string).trim())) {
+    throw failure("VALIDATION_ERROR", "媒体取源请求缺少 requestId、captureId、jobId 或 claimToken。");
+  }
+  return {
+    requestId: String(input.requestId),
+    captureId: String(input.captureId),
+    jobId: String(input.jobId),
+    claimToken: String(input.claimToken),
+  };
+}
+
+function normalizedMimeType(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const mimeType = value.split(";", 1)[0]?.trim().toLowerCase();
+  return mimeType && mimeType.length <= 512 && /^[a-z0-9.+-]+\/[a-z0-9.+*-]+$/u.test(mimeType) ? mimeType : fallback;
+}
+
+function guessedMediaMimeType(url: string, captureKind: unknown): string {
+  const pathname = (() => {
+    try { return new URL(url).pathname.toLowerCase(); }
+    catch { return url.toLowerCase(); }
+  })();
+  if (/\.m3u8$/u.test(pathname)) return "application/vnd.apple.mpegurl";
+  if (/\.mpd$/u.test(pathname)) return "application/dash+xml";
+  if (/\.webm$/u.test(pathname)) return "video/webm";
+  if (/\.(?:mp3|mpeg)$/u.test(pathname)) return "audio/mpeg";
+  if (/\.(?:m4a|aac|wav|ogg|opus)$/u.test(pathname)) return "audio/mp4";
+  if (captureKind === "audio_range") return "audio/mp4";
+  return "video/mp4";
+}
+
+function sourceAttachmentId(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const result = value as { value?: unknown; attachmentId?: unknown };
+  const nested = result.value && typeof result.value === "object" ? result.value as { attachmentId?: unknown } : undefined;
+  return typeof nested?.attachmentId === "string" ? nested.attachmentId : typeof result.attachmentId === "string" ? result.attachmentId : "";
+}
+
+async function createSourceAttachment(
+  input: SourceAcquisitionInput,
+  mimeType: string,
+  expectedTotalBytes?: number,
+): Promise<string> {
+  const result = await runCore("attachment.create", {
+    requestId: `${input.requestId}:create`,
+    captureId: input.captureId,
+    jobId: input.jobId,
+    kind: "other",
+    mimeType,
+    storage: "chunked",
+    ...(expectedTotalBytes === undefined ? {} : { expectedTotalBytes }),
+  });
+  const attachmentId = sourceAttachmentId(result);
+  if (!attachmentId) throw failure("ATTACHMENT_UNAVAILABLE", "扩展未能为源媒体建立本地附件。");
+  return attachmentId;
+}
+
+async function appendSourceBytes(attachmentId: string, offset: number, bytes: Uint8Array): Promise<number> {
+  let current = offset;
+  for (let start = 0; start < bytes.byteLength; start += MAX_SOURCE_CHUNK_BYTES) {
+    const chunk = bytes.slice(start, Math.min(start + MAX_SOURCE_CHUNK_BYTES, bytes.byteLength));
+    await runCore("attachment.appendChunk", {
+      requestId: crypto.randomUUID(),
+      attachmentId,
+      offset: current,
+      dataBase64: bytesToBase64(ownedBuffer(chunk)),
+    });
+    current += chunk.byteLength;
+  }
+  return current;
+}
+
+async function completeSourceAttachment(attachmentId: string, totalBytes: number, interrupted: boolean): Promise<void> {
+  await runCore("attachment.complete", {
+    requestId: crypto.randomUUID(),
+    attachmentId,
+    totalBytes,
+    interrupted,
+  });
+}
+
+async function streamResponseIntoAttachment(
+  response: Response,
+  attachmentId: string,
+): Promise<number> {
+  let offset = 0;
+  try {
+    if (response.body) {
+      const reader = response.body.getReader();
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        if (next.value?.byteLength) offset = await appendSourceBytes(attachmentId, offset, next.value);
+      }
+    } else {
+      offset = await appendSourceBytes(attachmentId, 0, new Uint8Array(await response.arrayBuffer()));
+    }
+    await completeSourceAttachment(attachmentId, offset, false);
+    return offset;
+  } catch (error) {
+    await completeSourceAttachment(attachmentId, offset, true).catch(() => undefined);
+    throw error;
+  }
+}
+
+function comparableUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.href;
+  } catch {
+    return undefined;
+  }
+}
+
+async function findSourceTab(pageUrl: unknown, publicPageUrl: unknown, frameId: number): Promise<{ tabId: number; frameId: number } | undefined> {
+  const privateUrl = comparableUrl(pageUrl);
+  const publicUrl = comparableUrl(publicPageUrl);
+  if (!privateUrl && !publicUrl) return undefined;
+  const tabs = await chrome.tabs.query({});
+  const exact = tabs.find(tab => {
+    const tabUrl = comparableUrl(tab.url);
+    return tab.id !== undefined && tabUrl !== undefined && (tabUrl === privateUrl || tabUrl === publicUrl);
+  });
+  if (exact?.id !== undefined) return { tabId: exact.id, frameId };
+  const candidates = tabs.filter(tab => {
+    if (tab.id === undefined) return false;
+    const tabUrl = comparableUrl(tab.url);
+    if (!tabUrl) return false;
+    try {
+      const current = new URL(tabUrl);
+      const target = new URL(privateUrl ?? publicUrl!);
+      return current.origin === target.origin && current.pathname === target.pathname;
+    } catch {
+      return false;
+    }
+  });
+  return candidates.length === 1 && candidates[0]?.id !== undefined
+    ? { tabId: candidates[0].id, frameId }
+    : undefined;
+}
+
+function mediaResponseType(response: Response, fallbackUrl: string, captureKind: unknown): string {
+  return normalizedMimeType(response.headers.get("content-type"), guessedMediaMimeType(fallbackUrl, captureKind));
+}
+
+function isClearlyNotMedia(response: Response, sourceUrl: string, pageUrl: unknown): boolean {
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType === "text/html" || contentType === "application/xhtml+xml" || contentType === "application/json") return true;
+  const normalizedSource = comparableUrl(sourceUrl);
+  const normalizedPage = comparableUrl(pageUrl);
+  return normalizedSource !== undefined && normalizedPage !== undefined && normalizedSource === normalizedPage;
+}
+
+async function handleSourceStreamMessage(message: unknown, sender: chrome.runtime.MessageSender): Promise<unknown> {
+  if (!isSourceStreamMessage(message) || !isContentSender(sender)) return undefined;
+  const value = message as unknown as Record<string, unknown>;
+  const requestId = String(value.requestId);
+  const stream = sourceStreams.get(requestId);
+  if (!stream || sender.tab?.id !== stream.tabId || (sender.frameId ?? 0) !== stream.frameId) return { ok: false, error: errorResponse(failure("FORBIDDEN", "媒体流不属于当前取源请求。")) };
+
+  if (value.type === "source_stream_start") {
+    const mimeType = normalizedMimeType(value.mimeType, stream.mimeType);
+    stream.mimeType = mimeType;
+    return { ok: true };
+  }
+
+  if (value.type === "source_stream_chunk") {
+    if (stream.terminal || typeof value.dataBase64 !== "string" || typeof value.offset !== "number" || value.offset !== stream.offset) {
+      throw failure("SOURCE_STREAM_INVALID", "媒体分块的顺序或请求状态无效。");
+    }
+    const bytes = new Uint8Array(base64ToArrayBuffer(value.dataBase64));
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_SOURCE_CHUNK_BYTES) throw failure("SOURCE_STREAM_INVALID", "媒体分块大小无效。");
+    stream.queue = stream.queue.then(async () => {
+      stream.offset = await appendSourceBytes(stream.attachmentId, stream.offset, bytes);
+    });
+    await stream.queue;
+    return { ok: true };
+  }
+
+  if (value.type === "source_stream_complete") {
+    if (stream.terminal || typeof value.totalBytes !== "number" || value.totalBytes !== stream.offset) throw failure("SOURCE_STREAM_INVALID", "媒体流结束信息无效。");
+    await stream.queue;
+    stream.terminal = true;
+    await completeSourceAttachment(stream.attachmentId, stream.offset, false);
+    const result: SourceAcquisitionResult = {
+      captureId: stream.captureId,
+      jobId: stream.jobId,
+      attachmentId: stream.attachmentId,
+      mimeType: stream.mimeType,
+      byteLength: stream.offset,
+      acquisition: "extension_page_fetch",
+      browserPlugin: "babel_content_clipper",
+    };
+    stream.resolve(result);
+    return { ok: true };
+  }
+
+  const errorValue = value.error && typeof value.error === "object" ? value.error as Record<string, unknown> : {};
+  const streamError = sanitizeSourceAcquisitionError(errorValue);
+  if (!stream.terminal) {
+    stream.terminal = true;
+    await stream.queue.catch(() => undefined);
+    await completeSourceAttachment(stream.attachmentId, stream.offset, true).catch(() => undefined);
+    stream.reject(streamError);
+  }
+  return { ok: true };
+}
+
+async function acquireSourceMedia(value: unknown): Promise<SourceAcquisitionResult> {
+  const input = sourceAcquisitionInput(value);
+  const source = await runCore<Record<string, unknown>>("capture.getAcquisitionSource", {
+    captureId: input.captureId,
+    jobId: input.jobId,
+    claimToken: input.claimToken,
+  });
+  const detail = await runCore<CaptureDetailResult>("capture.get", { captureId: input.captureId });
+  const captureKind = detail.capture.kind;
+  const mediaUrl = typeof source.mediaUrl === "string" ? source.mediaUrl : undefined;
+  const pageUrl = typeof source.pageUrl === "string" ? source.pageUrl : source.publicPageUrl;
+  let directError: unknown;
+
+  if (mediaUrl && /^https?:/iu.test(mediaUrl)) {
+    try {
+      const response = await fetch(mediaUrl, { credentials: "include", redirect: "follow", ...(typeof pageUrl === "string" ? { referrer: pageUrl } : {}) });
+      if (!response.ok) throw failure("SOURCE_FETCH_FAILED", `扩展后台取源返回 HTTP ${response.status}。`, { status: response.status });
+      if (isClearlyNotMedia(response, mediaUrl, pageUrl)) throw failure("SOURCE_NOT_MEDIA", "扩展后台取得的是页面文档，不是媒体文件。");
+      const mimeType = mediaResponseType(response, mediaUrl, captureKind);
+      const lengthHeader = Number(response.headers.get("content-length"));
+      const expectedTotalBytes = Number.isSafeInteger(lengthHeader) && lengthHeader >= 0 ? lengthHeader : undefined;
+      const attachmentId = await createSourceAttachment(input, mimeType, expectedTotalBytes);
+      const byteLength = await streamResponseIntoAttachment(response, attachmentId);
+      return { captureId: input.captureId, jobId: input.jobId, attachmentId, mimeType, byteLength, acquisition: "extension_background_fetch", browserPlugin: "babel_content_clipper" };
+    } catch (error) {
+      directError = sanitizeSourceAcquisitionError(error);
+    }
+  }
+
+  const frameId = detail.capture.source.frame?.frameId ?? 0;
+  const tab = await findSourceTab(pageUrl, source.publicPageUrl, frameId);
+  if (!tab) {
+    if (directError) throw directError;
+    throw failure("BROWSER_TAB_UNAVAILABLE", "找不到保存这条记录时对应的网页标签页；请重新打开来源页面后再让 Agent 调用扩展取源。", { pageUrl: typeof pageUrl === "string" ? redactUrl(pageUrl) : undefined });
+  }
+  const fallbackUrl = mediaUrl && !/^https?:/iu.test(mediaUrl) ? mediaUrl : undefined;
+  const mimeType = guessedMediaMimeType(fallbackUrl ?? "", captureKind);
+  const attachmentId = await createSourceAttachment(input, mimeType);
+  let resolveCompletion!: (result: SourceAcquisitionResult) => void;
+  let rejectCompletion!: (error: Error) => void;
+  const completion = new Promise<SourceAcquisitionResult>((resolve, reject) => {
+    resolveCompletion = resolve;
+    rejectCompletion = reject;
+  });
+  const stream: SourceStreamState = {
+    requestId: crypto.randomUUID(),
+    captureId: input.captureId,
+    jobId: input.jobId,
+    attachmentId,
+    tabId: tab.tabId,
+    frameId: tab.frameId,
+    mimeType,
+    offset: 0,
+    queue: Promise.resolve(),
+    terminal: false,
+    resolve: resolveCompletion,
+    reject: rejectCompletion,
+    completion,
+  };
+  sourceStreams.set(stream.requestId, stream);
+  try {
+    const response = await requestContent(tab.tabId, "acquire_media", {
+      frameId: tab.frameId,
+      requestId: stream.requestId,
+      ...(fallbackUrl ? { sourceUrl: fallbackUrl } : {}),
+    });
+    if (!response.ok) throw failure(response.error?.code ?? "SOURCE_FETCH_FAILED", response.error?.message ?? "页面上下文无法获取媒体。", response.error?.details);
+    return await completion;
+  } catch (error) {
+    if (!stream.terminal) {
+      stream.terminal = true;
+      await stream.queue.catch(() => undefined);
+      await completeSourceAttachment(stream.attachmentId, stream.offset, true).catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    sourceStreams.delete(stream.requestId);
+  }
 }
 
 async function cropScreenshot(dataUrl: string, rect: { x: number; y: number; width: number; height: number; devicePixelRatio?: number }): Promise<{ dataUrl: string; cropped: boolean }> {
@@ -515,6 +899,26 @@ async function ensureOffscreen(): Promise<void> {
 
 function failure(code: string, message: string, details?: unknown): Error {
   return Object.assign(new Error(message), { code, ...(details === undefined ? {} : { details }) });
+}
+
+function sanitizeSourceAcquisitionError(error: unknown): Error {
+  const candidate = error && typeof error === "object"
+    ? error as { code?: unknown; details?: unknown }
+    : {};
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const details = candidate.details && typeof candidate.details === "object"
+    ? candidate.details as Record<string, unknown>
+    : {};
+  const status = typeof details.status === "number" && Number.isInteger(details.status) && details.status >= 100 && details.status <= 599
+    ? details.status
+    : undefined;
+  if (code === "SOURCE_NOT_MEDIA") return failure(code, "扩展取得的响应不是媒体文件。");
+  if (code === "SOURCE_MEDIA_URL_UNAVAILABLE") return failure(code, "当前页面没有可获取的媒体地址。");
+  if (code === "BROWSER_TAB_UNAVAILABLE") return failure(code, "找不到保存这条记录时对应的网页标签页；请重新打开来源页面后再让 Agent 调用扩展取源。");
+  if (code === "SOURCE_FETCH_FAILED") {
+    return failure(code, status === undefined ? "扩展无法获取源媒体。" : `扩展取源返回 HTTP ${status}。`, status === undefined ? undefined : { status });
+  }
+  return failure("SOURCE_FETCH_FAILED", "扩展无法获取源媒体。");
 }
 
 interface RecorderRuntimeStatus {
@@ -993,7 +1397,8 @@ async function startMedia(tabId: number, context?: Record<string, unknown>): Pro
   const startedAt = typeof started.startedAt === "string" ? started.startedAt : new Date().toISOString();
   const startedMediaSeconds = typeof started.originalStart === "number" && Number.isFinite(started.originalStart) && started.originalStart >= 0 ? started.originalStart : 0;
   const targetId = String(target.targetId ?? "unknown");
-  const sourceUrl = String(target.source ?? source.url ?? "about:blank");
+  const publicSourceUrl = String(target.source ?? source.url ?? "about:blank");
+  const acquisitionSourceUrl = String(target.acquisitionSource ?? target.source ?? source.url ?? "about:blank");
   const documentId = typeof source.documentInstanceId === "string" ? source.documentInstanceId : undefined;
   const initialEvent: MediaEvent = {
     type: "start",
@@ -1001,14 +1406,19 @@ async function startMedia(tabId: number, context?: Record<string, unknown>): Pro
     wallTime: startedAt,
     ...(typeof started.playbackRate === "number" && started.playbackRate > 0 ? { playbackRate: started.playbackRate } : {}),
   };
+  const normalized = normalizedSource(source, "about:blank", typeof context?.frameId === "number" ? context.frameId : 0);
+  const normalizedMetadata = normalized.metadata && typeof normalized.metadata === "object" && !Array.isArray(normalized.metadata)
+    ? normalized.metadata as Record<string, unknown>
+    : {};
   const created = await runCore<CaptureCreateResult>("capture.create", {
     requestId: crypto.randomUUID(),
     input: {
       kind: targetId.startsWith("audio") ? "audio_range" : "media_range",
       state: "open",
       source: {
-        ...normalizedSource(source, "about:blank", typeof context?.frameId === "number" ? context.frameId : 0),
-        metadata: { mediaUrl: redactUrl(sourceUrl), targetId, mediaType: targetId.startsWith("audio") ? "audio" : "video", startedAt, sourceConfidence: "best_effort" },
+        ...normalized,
+        mediaAcquisitionUrl: acquisitionSourceUrl,
+        metadata: { ...normalizedMetadata, mediaUrl: redactUrl(acquisitionSourceUrl), targetId, mediaType: targetId.startsWith("audio") ? "audio" : "video", startedAt, sourceConfidence: "best_effort" },
         ...(typeof target.duration === "number" && Number.isFinite(target.duration) ? { mediaDurationSeconds: target.duration } : {}),
       },
       selection: {
@@ -1033,7 +1443,7 @@ async function startMedia(tabId: number, context?: Record<string, unknown>): Pro
     tabId,
     frameId: typeof context?.frameId === "number" ? context.frameId : 0,
     targetId,
-    source: sourceUrl,
+    source: publicSourceUrl,
     ...(documentId ? { documentInstanceId: documentId } : {}),
     startedAt,
     startedMediaSeconds,
@@ -1041,7 +1451,7 @@ async function startMedia(tabId: number, context?: Record<string, unknown>): Pro
     paddingAfterSeconds: capture.padding.afterSeconds,
     recordLive: context?.recordLive === true,
     lastObservedMediaSeconds: startedMediaSeconds,
-    observedSegments: [{ start: startedMediaSeconds, end: startedMediaSeconds, source: sourceUrl }],
+    observedSegments: [{ start: startedMediaSeconds, end: startedMediaSeconds, source: publicSourceUrl }],
     observedEvents: [initialEvent],
   };
   await mutateOpenMedia(value => { value[String(tabId)] = state; });
@@ -1506,6 +1916,7 @@ async function toggleMedia(tabId: number, context?: Record<string, unknown>): Pr
 
 async function onMessage(message: unknown, sender: chrome.runtime.MessageSender): Promise<unknown> {
   if (!message || typeof message !== "object") return undefined;
+  if (isSourceStreamMessage(message)) return handleSourceStreamMessage(message, sender);
   if ((message as { type?: unknown }).type === "content_reply") return handleContentReply(message as ContentReplyMessage, sender);
   if ((message as { type?: unknown }).type === "media_update" && isContentSender(sender)) return handleMediaUpdate(message as { captureId: string; observations: unknown }, sender);
   if ((message as { type?: unknown }).type === "media_interrupted" && isContentSender(sender)) {
@@ -1580,6 +1991,7 @@ async function onMessage(message: unknown, sender: chrome.runtime.MessageSender)
 
 async function dispatchNative(method: NativeMethod, params: unknown): Promise<unknown> {
   if (method === "bridge.hello") return { accepted: true, profileId: await profileId() };
+  if (method === "capture.acquireMedia") return acquireSourceMedia(params);
   if (method === "connection.status") return connectionStatus();
   return runCore(method, params);
 }

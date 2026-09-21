@@ -2,13 +2,13 @@
 
 [简体中文](../../install.md) · [English](../en/install.md) · [繁體中文](../zh-TW/install.md) · [日本語](install.md) · [한국어](../ko/install.md)
 
-このガイドでは `0.1.0-alpha.1` のコマンドラインインターフェースを使用します。実際に検証した OS、ブラウザー、クライアントは[互換性マトリクス](../../compatibility.md)（簡体字中国語）を参照してください。現在は開発候補版であり、npm には公開されていません。
+このガイドでは `0.1.1` のコマンドラインインターフェースを使用します。実際に検証した OS、ブラウザー、クライアントは[互換性マトリクス](../../compatibility.md)（簡体字中国語）を参照してください。正式リリースとして、対応するリリース添付ファイルまたはソースから利用できます。
 
 ## 1. リリースパッケージをダウンロードする、またはソースを準備する
 
-一般ユーザーは該当バージョンの [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases) から `babel-content-clipper-extension-0.1.0-alpha.1.zip` をダウンロードし、保持するディレクトリに展開してください。ブラウザーでの収集だけなら、ソースコード、Node.js、ローカルビルドは不要です。
+一般ユーザーは該当バージョンの [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases) から `babel-content-clipper-extension-0.1.1.zip` をダウンロードし、保持するディレクトリに展開してください。ブラウザーでの収集だけなら、ソースコード、Node.js、ローカルビルドは不要です。
 
-ローカル MCP に接続する場合は、同じ Release から `babel-content-clipper-0.1.0-alpha.1.tgz` もダウンロードします。ローカルコンポーネントには Node.js 22 以降が必要です。`node --version` が正常に実行できることを確認してください。ブラウザーでの収集自体は FFmpeg に依存しません。Agent が音声や動画を切り出す場合は、その実行環境にすでにあるメディアツールを使用します。
+ローカル MCP に接続する場合は、同じ Release から `babel-content-clipper-0.1.1.tgz` もダウンロードします。ローカルコンポーネントには Node.js 22 以降が必要です。`node --version` が正常に実行できることを確認してください。Clipper MCP パッケージは Hugging Face、`sherpa-onnx`、FFmpeg、yt-dlp、モデルを同梱せず、実行もしません。メディアが必要な場合、Agent は `babel_clipper_acquire_source_media` で接続中の Babel 拡張機能に取得を依頼し、`babel_clipper_export_capture` で添付ファイルをローカルへ書き出します。ASR が必要な場合だけ、Agent が MCP ガイドを読み、自分の実行環境で必要なツールを準備・検証します。CUA、Playwright、Puppeteer、ブラウザーのクリック操作や Agent の直接ダウンローダーにはフォールバックしません。
 
 ソースディレクトリからビルドします。
 
@@ -20,7 +20,7 @@ npm run build
 Release の MCP パッケージをインストールする場合は、自分のインストールディレクトリで次のコマンドを実行します。ファイル名は実際に取得したパッケージのパスに置き換えてください。
 
 ```sh
-npm install /absolute/path/babel-content-clipper-0.1.0-alpha.1.tgz
+npm install /absolute/path/babel-content-clipper-0.1.1.tgz
 ```
 
 ソース方式のローカルコンポーネントは `dist/node/cli.js`、パッケージ方式では `node_modules/babel-content-clipper/dist/node/cli.js` にあります。以下ではソース方式の相対パスを使用するため、コマンドはソースのルートで実行してください。

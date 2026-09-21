@@ -6,6 +6,7 @@ import {
   DEFAULT_CONNECT_TIMEOUT_MS,
   DEFAULT_RPC_TIMEOUT_MS,
   MAX_BROKER_FRAME_BYTES,
+  MCP_SERVER_VERSION,
 } from "./constants.js";
 import type { BridgeConfig } from "./config.js";
 import { ClipperBridgeError } from "./errors.js";
@@ -27,6 +28,8 @@ export interface BrokerClientOptions {
   config: BridgeConfig;
   role: BrokerClientRole;
   profileId?: string;
+  /** Version of the MCP client. Native Messaging peers do not send it. */
+  mcpVersion?: string;
   connectTimeoutMs?: number;
   requestTimeoutMs?: number;
 }
@@ -54,6 +57,7 @@ export class BrokerClient extends EventEmitter {
     await client.request(BROKER_METHODS.connect, {
       role: options.role,
       secret: options.config.secret,
+      ...(options.role === "mcp" ? { mcp_version: options.mcpVersion ?? MCP_SERVER_VERSION } : {}),
       ...(options.profileId === undefined ? {} : { profileId: options.profileId }),
     }, options.profileId, options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS);
     return client;

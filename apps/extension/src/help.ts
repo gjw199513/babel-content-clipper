@@ -19,7 +19,7 @@ const sections: ReadonlyArray<{ heading: string; paragraphs: readonly string[] }
     "paragraphs": [
       "在媒体页面按 Alt+Shift+V 开始，再按一次结束。同一次记录内往回拖动不会重复计算重叠范围；再次主动采集可以建立独立记录。",
       "前后预留时间可在设置中调整。普通标记只记录范围，不等于已下载媒体文件。需要现场音画时，为本次记录勾选对应开关，并在目标网页点击扩展图标授予权限。",
-      "现场录制没有开启前的回溯缓冲；失败或覆盖不足会显示实际原因。ASR、OCR、下载和裁切由后续 Agent 及其工具完成。"
+      "现场录制没有开启前的回溯缓冲；失败或覆盖不足会显示实际原因。源媒体取源由已连接的 Babel 扩展完成；ASR、OCR 和裁切由后续 Agent 及其工具完成。不得使用浏览器点击或自己的下载器取源。"
     ]
   },
   {
@@ -27,7 +27,9 @@ const sections: ReadonlyArray<{ heading: string; paragraphs: readonly string[] }
     "paragraphs": [
       "先安装 Node.js 22 或更新版本，并在项目目录执行 npm ci 和 npm run build。加载 dist/extension 后，从连接设置复制 profileId。",
       "以下为 macOS / Google Chrome 示例：在项目目录运行，将 YOUR_PROFILE_ID 替换为当前浏览器连接标识。",
-      "把生成的 babel-clipper-mcp.json 合并到客户端的 MCP 配置，在连接设置中重连本地服务，再刷新客户端连接。不同浏览器的注册路径不同；Windows 和 Linux 尚未完成实机验证。",
+      "从哪里进入连接设置：侧栏底部直接点击“连接设置”；如果已经打开素材库，点击页面右上角的“连接设置”。进入后找到“MCP 连接”卡片。",
+      "如果 Agent 提示无法连接，请按这三个动作操作：1. 点击“连接设置”；2. 在“MCP 连接”卡片点击“立即重连本地服务”；3. 看到“本地桥已连接”后，让 Agent 刷新 MCP。不要去来源网页里点击任何按钮。",
+      "把生成的 babel-clipper-mcp.json 合并到客户端的 MCP 配置后，再按上面的顺序重连本地服务并刷新客户端连接。不同浏览器的注册路径不同；Windows 和 Linux 尚未完成实机验证。",
       "先让 Agent 查询待处理记录，再明确要求处理指定记录。仅查询和提醒不会自动执行。每条记录独立输出，处理中状态防止其他 Agent 同时领取。"
     ]
   },
@@ -49,7 +51,7 @@ const sections: ReadonlyArray<{ heading: string; paragraphs: readonly string[] }
   {
     "heading": "兼容与使用范围",
     "paragraphs": [
-      "当前为 alpha 版本。公开网页样本通过不代表全站适配，也不保证登录、付费内容或源媒体下载可用。",
+      "当前为正式版本。公开网页样本通过不代表全站适配，也不保证登录、付费内容或源媒体下载可用。",
       "作者计划提供个人非商业使用权限，商业使用须单独授权；正式许可条款尚未定稿，项目不采用 MIT。"
     ]
   }

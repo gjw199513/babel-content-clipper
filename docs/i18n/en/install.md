@@ -2,13 +2,13 @@
 
 [简体中文](../../install.md) · [English](install.md) · [繁體中文](../zh-TW/install.md) · [日本語](../ja/install.md) · [한국어](../ko/install.md)
 
-This guide uses the `0.1.0-alpha.1` command-line interface. See the [compatibility matrix](../../compatibility.md) for the systems, browsers, and clients that have actually been validated. This is a development candidate and has not been published to npm.
+This guide uses the `0.1.1` command-line interface. See the [compatibility matrix](../../compatibility.md) for the systems, browsers, and clients that have actually been validated. This is a stable release; use the matching release asset or build from source.
 
 ## 1. Download a release package or prepare the source
 
-Regular users should download `babel-content-clipper-extension-0.1.0-alpha.1.zip` from the matching [GitHub Release](https://github.com/gjw199513/babel-content-clipper/releases) and extract it to a directory that will remain in place. Browser-only capture does not require a source checkout, Node.js, or a local build.
+Regular users should download `babel-content-clipper-extension-0.1.1.zip` from the matching [GitHub Release](https://github.com/gjw199513/babel-content-clipper/releases) and extract it to a directory that will remain in place. Browser-only capture does not require a source checkout, Node.js, or a local build.
 
-To connect local MCP, also download `babel-content-clipper-0.1.0-alpha.1.tgz` from the same Release. The local component requires Node.js 22 or newer; confirm that `node --version` runs successfully. Browser capture itself does not depend on FFmpeg. If an Agent needs to clip audio or video, it can use media tools already available in its own execution environment.
+To connect local MCP, also download `babel-content-clipper-0.1.1.tgz` from the same Release. The local component requires Node.js 22 or newer; confirm that `node --version` runs successfully. The Clipper MCP package does not bundle Hugging Face, sherpa-onnx, FFmpeg, or model files and does not run post-processing. When media is needed, the Agent calls `babel_clipper_acquire_source_media` so the connected Babel extension fetches it, then calls `babel_clipper_export_capture` to materialize the local attachment. When ASR is needed, the Agent reads the structured MCP guide and prepares the required tools in its own environment. The workflow never falls back to CUA, Playwright, Puppeteer, or browser clicks.
 
 Build from the source directory:
 
@@ -20,7 +20,7 @@ npm run build
 To install the MCP package from the Release, run the following command in your own installation directory. Replace the filename with the actual downloaded package path.
 
 ```sh
-npm install /absolute/path/babel-content-clipper-0.1.0-alpha.1.tgz
+npm install /absolute/path/babel-content-clipper-0.1.1.tgz
 ```
 
 With a source build, the local component is `dist/node/cli.js`. With the package installation, it is `node_modules/babel-content-clipper/dist/node/cli.js`. The rest of this guide uses the source-build relative path; run the commands from the source root.
@@ -61,7 +61,21 @@ On success, the terminal returns JSON containing `nativeHost.manifestPath`, `nat
 
 Merge the entry under `mcpServers` from `babel-clipper-mcp.json` into your client's MCP configuration. MCP configuration locations and outer formats differ by client, so use the client's MCP settings entry point. The generated `command` is the absolute path to the local Node executable. Its arguments contain the component path, configuration directory, and `profileId`; no path from the author's computer is required.
 
-Choose one of these ways to set the output directory:
+Choose one of these ways to set the output directory. `babel_clipper_export_capture` writes the text/HTML/attachment Capture bundle there; the Agent writes media, ASR, correction, audit, and manifest files below an isolated Capture/Job directory and then reports their references through MCP:
+
+`<output-root>/captures/<captureId>/capture.json`
+
+`<output-root>/captures/<captureId>/jobs/<jobId>/source/source-media.*`
+
+`<output-root>/captures/<captureId>/jobs/<jobId>/source/source-manifest.json`
+
+`<output-root>/captures/<captureId>/jobs/<jobId>/transcription/raw-transcript.txt`
+
+`<output-root>/captures/<captureId>/jobs/<jobId>/transcription/corrected-transcript.txt`
+
+Clipper does not manage a processing runtime. The Agent calls `babel_clipper_get_processing_guide` for pinned model identities, hashes, recommended dependencies, file layout, correction constraints, and writeback rules. After claiming a Job, it calls `babel_clipper_acquire_source_media` for missing media and exports the resulting attachment. Private URLs, cookies, and claim tokens remain inside the extension and must not enter business output.
+
+Choose one of these output-directory entry points:
 
 - Set **Global default output directory (optional)** under **Connection & Settings** in the library.
 - Add `--output-root /absolute/path/to/output` during installation to save an MCP default. You can also add `--output-root` to one client's MCP launch arguments to override the default for that connection only.

@@ -3,12 +3,16 @@ import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { exportCaptureBundle } from "../../packages/mcp/src/capture-export.js";
 
 const extensionPath = resolve(process.cwd(), "dist/extension");
 const evidencePath = resolve(process.cwd(), ".hallmark/browser-evidence");
 const playwrightExecutable = chromium.executablePath();
 const chromiumExecutable = process.env.BABEL_CHROMIUM_PATH ?? (existsSync(playwrightExecutable) ? playwrightExecutable : undefined);
 const extensionChannel = "babel_content_clipper.v1";
+const localExportRoot = process.env.BABEL_PLATFORM_EXPORT_ROOT
+  ? resolve(process.env.BABEL_PLATFORM_EXPORT_ROOT)
+  : undefined;
 
 type RuntimeResponse<T = unknown> = {
   readonly ok: boolean;
@@ -171,6 +175,7 @@ async function attachmentFacts(page: Page, attachmentId: string): Promise<{
   readonly metadata: Record<string, unknown>;
   readonly bytesLength: number;
   readonly bytesPrefix: number[];
+  readonly bytesBase64: string;
   readonly sha256: string;
 }> {
   return page.evaluate(async (id) => {
@@ -197,10 +202,15 @@ async function attachmentFacts(page: Page, attachmentId: string): Promise<{
       offset += chunk.byteLength;
     }
     const digest = await crypto.subtle.digest("SHA-256", bytes);
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+    }
     return {
       metadata,
       bytesLength: bytes.byteLength,
       bytesPrefix: [...bytes.slice(0, 16)],
+      bytesBase64: btoa(binary),
       sha256: [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join(""),
     };
   }, attachmentId);
@@ -267,10 +277,12 @@ async function runPlatform(sample: PlatformCase): Promise<void> {
       expect(detail.capture.integrity.missing).toHaveLength(0);
     }
     const attachments: Array<Record<string, unknown>> = [];
+    const attachmentBytes = new Map<string, Buffer>();
     for (const attachment of detail.attachments) {
       const attachmentId = typeof attachment.attachmentId === "string" ? attachment.attachmentId : "";
       if (!attachmentId) continue;
       const bytes = await attachmentFacts(sidepanel, attachmentId);
+      attachmentBytes.set(attachmentId, Buffer.from(bytes.bytesBase64, "base64"));
       expect(bytes.bytesLength).toBeGreaterThan(0);
       expect(attachment.dataAvailable).toBe(true);
       attachments.push({
@@ -286,6 +298,37 @@ async function runPlatform(sample: PlatformCase): Promise<void> {
     }
     if (sample.preferImage && selected.selectedImageCount > 0) {
       expect(attachments.some((attachment) => String(attachment.mimeType).startsWith("image/"))).toBe(true);
+    }
+    if (localExportRoot !== undefined) {
+      const exported = await exportCaptureBundle({
+        request: async (method, params) => {
+          if (method === "capture.get") return detail;
+          if (method !== "attachment.get" || !params || typeof params !== "object") {
+            throw new Error(`unexpected local export request: ${method}`);
+          }
+          const requestParams = params as { attachmentId?: unknown; offset?: unknown; maxBytes?: unknown };
+          const attachmentId = typeof requestParams.attachmentId === "string" ? requestParams.attachmentId : "";
+          const offset = typeof requestParams.offset === "number" ? requestParams.offset : 0;
+          const maxBytes = typeof requestParams.maxBytes === "number" ? requestParams.maxBytes : 512 * 1024;
+          const bytes = attachmentBytes.get(attachmentId);
+          if (!bytes) throw new Error(`missing local attachment bytes: ${attachmentId}`);
+          const chunk = bytes.subarray(offset, Math.min(offset + maxBytes, bytes.byteLength));
+          const metadata = detail.attachments.find((item) => item.attachmentId === attachmentId);
+          return {
+            attachment: metadata,
+            offset,
+            returnedBytes: chunk.byteLength,
+            totalBytes: bytes.byteLength,
+            eof: offset + chunk.byteLength >= bytes.byteLength,
+            dataBase64: chunk.toString("base64"),
+          };
+        },
+        captureId: detail.capture.captureId,
+        outputRoot: resolve(localExportRoot, sample.id),
+        includeAttachmentBytes: true,
+      });
+      expect(exported.complete).toBe(true);
+      evidence.localExport = exported;
     }
     const library = await extensionPage(run.context, id, "library.html");
     await library.reload();

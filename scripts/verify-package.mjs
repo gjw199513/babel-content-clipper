@@ -33,7 +33,7 @@ async function requireFile(path, from = extensionRoot) {
 if (manifest.manifest_version !== 3) failures.push('Expected Chrome Manifest V3');
 if (manifest.background?.type !== 'module') failures.push('Background must be an ES module service worker');
 if (manifest.version !== pkg.version.split('-')[0]) failures.push('Manifest and package version do not match');
-if (manifest.version_name !== pkg.version) failures.push('Manifest does not disclose the prerelease version');
+if (manifest.version_name !== pkg.version) failures.push('Manifest and package version_name do not match');
 await requireFile(manifest.background.service_worker);
 await requireFile(manifest.side_panel.default_path);
 await requireFile('library.html');

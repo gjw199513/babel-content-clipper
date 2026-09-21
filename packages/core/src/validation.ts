@@ -26,6 +26,9 @@ const sourceSchema = z
   .object({
     title: z.string().max(4096),
     pageUrl: z.string().min(1).max(8192),
+    /* Capture-time values used by the local downloader; Core never returns them in public records. */
+    acquisitionUrl: z.string().max(8192).optional(),
+    mediaAcquisitionUrl: z.string().max(8192).optional(),
     canonicalUrl: z.string().max(8192).optional(),
     site: z.string().min(1).max(1024),
     contentId: z.string().max(4096).optional(),
@@ -371,6 +374,9 @@ const schemas = {
     .strict()
     .default({ view: "pending", limit: 50 }),
   "capture.get": z.object({ captureId: idSchema }).strict(),
+  "capture.getAcquisitionSource": z
+    .object({ captureId: idSchema, jobId: idSchema, claimToken: idSchema })
+    .strict(),
   "job.get": z.object({ jobId: idSchema }).strict(),
   "job.claim": z
     .object({

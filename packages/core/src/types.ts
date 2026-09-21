@@ -1,5 +1,5 @@
 export const CORE_SCHEMA_VERSION = "1.0" as const;
-export const CORE_DATABASE_VERSION = 1 as const;
+export const CORE_DATABASE_VERSION = 2 as const;
 export const MAX_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
 
 export const CORE_METHODS = [
@@ -8,6 +8,7 @@ export const CORE_METHODS = [
   "capture.finalize",
   "capture.list",
   "capture.get",
+  "capture.getAcquisitionSource",
   "job.get",
   "job.claim",
   "job.heartbeat",
@@ -29,6 +30,18 @@ export const CORE_METHODS = [
 ] as const;
 
 export type CoreMethod = (typeof CORE_METHODS)[number];
+
+/**
+ * Methods advertised by a connected extension. Source-media acquisition is
+ * handled by the extension background, not by the IndexedDB core service, so
+ * it is a capability but not a CoreMethod accepted by service.handle().
+ */
+export const EXTENSION_CAPABILITY_METHODS = [
+  ...CORE_METHODS,
+  "capture.acquireMedia",
+] as const;
+
+export type ExtensionCapabilityMethod = (typeof EXTENSION_CAPABILITY_METHODS)[number];
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -82,6 +95,15 @@ export interface SourceSnapshot {
     | "unknown";
   readonly frame?: SourceFrameSnapshot;
   readonly metadata?: JsonObject;
+}
+
+/**
+ * Capture-time source context used only by the local source acquisition tool.
+ * These fields never belong to the public CaptureRecord returned to Agents.
+ */
+export interface SourceSnapshotInput extends SourceSnapshot {
+  readonly acquisitionUrl?: string;
+  readonly mediaAcquisitionUrl?: string;
 }
 
 export interface TextLocator {
@@ -198,7 +220,7 @@ export interface CaptureIntegrity {
 export interface CaptureCreateInput {
   readonly kind: CaptureKind;
   readonly state: "open" | "sealed";
-  readonly source: SourceSnapshot;
+  readonly source: SourceSnapshotInput;
   readonly selection: CaptureSelectionInput;
   readonly padding?: PaddingSnapshot;
   readonly captureMethod: string;
@@ -505,6 +527,20 @@ export interface CaptureDetailResult {
   readonly attachments: readonly AttachmentRecord[];
 }
 
+/**
+ * A private, claim-bound source context. URL fields are intentionally not
+ * included in CaptureDetailResult or BackupBundle.
+ */
+export interface CaptureAcquisitionSource {
+  readonly captureId: string;
+  readonly jobId: string;
+  readonly title: string;
+  readonly site: string;
+  readonly publicPageUrl: string;
+  readonly pageUrl?: string;
+  readonly mediaUrl?: string;
+}
+
 export interface ClaimItemResult {
   readonly jobId: string;
   readonly disposition: "accepted" | "already_claimed" | "not_eligible" | "not_found";
@@ -600,6 +636,8 @@ export interface BackupImportResult {
 export interface DiagnosticsResult {
   readonly schemaVersion: typeof CORE_SCHEMA_VERSION;
   readonly databaseVersion: typeof CORE_DATABASE_VERSION;
+  readonly extensionVersion?: string;
+  readonly coreVersion?: string;
   readonly profileId: string;
   readonly databaseName: string;
   readonly revision: number;
@@ -630,10 +668,12 @@ export interface DiagnosticsResult {
 export interface ConnectionStatusResult {
   readonly browserAvailable: boolean;
   readonly databaseAvailable: boolean;
+  readonly extensionVersion?: string;
+  readonly coreVersion?: string;
   readonly profileId: string;
   readonly revision: number;
   readonly capabilities: {
-    readonly methods: readonly CoreMethod[];
+    readonly methods: readonly ExtensionCapabilityMethod[];
     readonly maxAttachmentChunkBytes: number;
     readonly fourJobStates: true;
   };
@@ -655,6 +695,9 @@ export interface SerializableClipperError {
 export interface CreateClipperServiceOptions {
   readonly databaseName?: string;
   readonly defaultProfileId?: string;
+  /** Version reported by the bundled browser extension/Core. */
+  readonly extensionVersion?: string;
+  readonly coreVersion?: string;
   readonly now?: () => Date;
   readonly randomUUID?: () => string;
   readonly browserAvailable?: () => boolean;

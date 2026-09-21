@@ -146,6 +146,10 @@ test("side panel stays compact and settings use a dedicated responsive page", as
       }));
     expect(captureResponse?.ok).toBe(true);
     await expect(sidepanel.locator(".capture-row")).toHaveCount(1);
+    await expect(sidepanel.locator("#connection-notice")).toBeVisible();
+    await expect(sidepanel.locator("#connection-notice")).toContainText("请按这个顺序操作");
+    await expect(sidepanel.getByRole("button", { name: "立即重连本地服务" })).toBeVisible();
+    await expect(sidepanel.locator("#connection-notice").getByRole("button", { name: "打开连接设置" })).toBeVisible();
 
     for (const width of widths) {
       await sidepanel.setViewportSize({ width, height: 900 });
@@ -195,6 +199,12 @@ test("side panel stays compact and settings use a dedicated responsive page", as
     await expect(settings.locator(".view-tabs")).toBeVisible();
     await expect(settings.locator(".maintenance-panel")).toBeVisible();
     await expect(settings.locator(".maintenance-panel")).not.toHaveAttribute("open", "");
+    await expect(settings.locator("#connection-banner")).toBeVisible();
+    await expect(settings.locator("#connection-banner")).toContainText("请按这个顺序操作");
+    await settings.locator("#connection-banner").getByRole("button", { name: "打开连接设置" }).click();
+    await expect(settings.locator(".settings-form")).toBeVisible();
+    await expect(settings.locator(".connection-card")).toContainText("MCP 连接");
+    await expect(settings.locator(".connection-card")).toContainText("立即重连本地服务");
     expect(errors).toEqual([]);
     evidence.extensionId = id;
     evidence.settingsUrl = settings.url();

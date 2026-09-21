@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
@@ -43,6 +43,7 @@ interface FixtureOptions {
 
 async function fixture(options: FixtureOptions = {}): Promise<{
   profileId: string;
+  captureId: string;
   jobId: string;
   taskOutputDirectory: string;
   globalOutputDirectory?: string;
@@ -108,7 +109,17 @@ async function fixture(options: FixtureOptions = {}): Promise<{
   await native.request("bridge.hello", { channel: "test-extension" }, profileId);
   native.on("request", async (request: WireRequest) => {
     try {
-      const result = await service.handle(request.method, request.params, { profileId: request.profileId });
+      const result = request.method === "capture.acquireMedia"
+        ? {
+            captureId: (request.params as { captureId: string }).captureId,
+            jobId: (request.params as { jobId: string }).jobId,
+            attachmentId: "asset-extension-source",
+            mimeType: "video/mp4",
+            byteLength: 42,
+            acquisition: "extension_background_fetch",
+            browserPlugin: "babel_content_clipper",
+          }
+        : await service.handle(request.method, request.params, { profileId: request.profileId });
       native.sendMessage(successResponse(request.id, result, request.profileId));
     } catch (error) {
       const value = error as { code?: unknown; message?: unknown; details?: unknown };
@@ -145,6 +156,7 @@ async function fixture(options: FixtureOptions = {}): Promise<{
   transports.push(transport);
   return {
     profileId,
+    captureId: created.value.capture.captureId,
     jobId,
     taskOutputDirectory,
     ...(globalOutputDirectory === undefined ? {} : { globalOutputDirectory }),
@@ -194,13 +206,76 @@ function toolPayload(result: unknown): Record<string, unknown> {
 
 describe("standard MCP stdio server", () => {
   it("performs the official stdio handshake and forwards exact Core-shaped tools to a fake IndexedDB extension", async () => {
-    const { jobId, taskOutputDirectory, transport } = await fixture();
+    const { captureId, jobId, taskOutputDirectory, transport } = await fixture();
     const client = new Client({ name: "mcp-stdio-test", version: "1.0.0" }, { capabilities: {} });
     await client.connect(transport);
 
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name)).toContain("babel_clipper_claim_records");
-    expect(tools.tools.map((tool) => tool.name)).toContain("babel_clipper_commit_result");
+    const toolNames = tools.tools.map((tool) => tool.name);
+    expect(toolNames).toContain("update_mcp");
+    expect(toolNames).toContain("babel_clipper_claim_records");
+    expect(toolNames).toContain("babel_clipper_get_processing_guide");
+    expect(toolNames).toContain("babel_clipper_acquire_source_media");
+    expect(toolNames).toContain("babel_clipper_export_capture");
+    expect(toolNames).toContain("babel_clipper_commit_result");
+    expect(toolNames).not.toContain("babel_clipper_get_acquisition_source");
+    expect(toolNames).not.toContain("babel_clipper_download_media");
+    expect(toolNames).not.toContain("babel_clipper_prepare_processing_runtime");
+    expect(toolNames).not.toContain("babel_clipper_transcribe_media");
+    expect(toolNames).not.toContain("babel_clipper_save_corrected_transcript");
+
+    const update = await client.callTool({ name: "update_mcp", arguments: {} });
+    expect(toolPayload(update)).toMatchObject({ ok: true, result: { updated: false, update_required: true, action: "restart_mcp_host" } });
+
+    const guide = await client.callTool({
+      name: "babel_clipper_get_processing_guide",
+      arguments: { topic: "video_text_extraction" },
+    });
+    expect(toolPayload(guide)).toMatchObject({
+      ok: true,
+      result: {
+        topic: "video_text_extraction",
+        architecture: {
+          executor: "agent",
+          mcpExecutesProcessing: false,
+          browserAutomationAllowed: false,
+          extensionAcquisitionRequired: true,
+        },
+      },
+    });
+
+    const batchGuide = await client.callTool({
+      name: "babel_clipper_get_processing_guide",
+      arguments: { topic: "pending_batch_processing" },
+    });
+    expect(toolPayload(batchGuide)).toMatchObject({
+      ok: true,
+      result: {
+        topic: "pending_batch_processing",
+        architecture: {
+          executor: "agent",
+          mcpExecutesProcessing: false,
+          userAuthorizationRequired: true,
+          copyOrQueryHasSideEffects: false,
+        },
+        pagination: { mustFollowNextCursor: true },
+        claiming: { maxJobIdsPerCall: 200, acceptedOnly: true },
+      },
+    });
+
+    const resources = await client.listResources();
+    const guideResource = resources.resources.find((resource) => resource.name === "video-text-extraction-guide");
+    expect(guideResource?.uri).toContain("/guides/video-text-extraction");
+    const guideDocument = await client.readResource({ uri: guideResource?.uri as string });
+    expect(guideDocument.contents[0]).toMatchObject({ mimeType: "text/markdown" });
+    expect("text" in guideDocument.contents[0]! ? guideDocument.contents[0]!.text : "")
+      .toContain("源媒体由 Babel 扩展在后台或页面上下文获取并保存为扩展附件");
+    const batchGuideResource = resources.resources.find((resource) => resource.name === "pending-batch-processing-guide");
+    expect(batchGuideResource?.uri).toContain("/guides/pending-batch-processing");
+    const batchGuideDocument = await client.readResource({ uri: batchGuideResource?.uri as string });
+    expect(batchGuideDocument.contents[0]).toMatchObject({ mimeType: "text/markdown" });
+    expect("text" in batchGuideDocument.contents[0]! ? batchGuideDocument.contents[0]!.text : "")
+      .toContain("Agent 可以一次完成整个批次");
 
     const invalidList = await client.callTool({
       name: "babel_clipper_list_records",
@@ -238,6 +313,21 @@ describe("standard MCP stdio server", () => {
     });
     const claimToken = claimResult.items[0]?.claimToken;
     expect(claimToken).toEqual(expect.any(String));
+
+    const acquired = await client.callTool({
+      name: "babel_clipper_acquire_source_media",
+      arguments: { requestId: "acquire-from-extension", captureId, jobId, claimToken },
+    });
+    expect(toolPayload(acquired)).toMatchObject({
+      ok: true,
+      result: {
+        captureId,
+        jobId,
+        attachmentId: "asset-extension-source",
+        acquisition: "extension_background_fetch",
+        browserPlugin: "babel_content_clipper",
+      },
+    });
 
     const rejectedVerification = await client.callTool({
       name: "babel_clipper_commit_result",
@@ -306,6 +396,26 @@ describe("standard MCP stdio server", () => {
         }],
       },
     });
+  });
+
+  it("exports a complete text capture to the persisted local output root", async () => {
+    const { captureId, globalOutputDirectory, transport } = await fixture({ globalOutputDirectory: true });
+    const client = new Client({ name: "mcp-export-test", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(transport);
+
+    const exported = await client.callTool({
+      name: "babel_clipper_export_capture",
+      arguments: { captureId },
+    });
+    expect(toolPayload(exported)).toMatchObject({
+      ok: true,
+      result: { captureId, complete: true },
+    });
+    const captureDirectory = join(globalOutputDirectory as string, "captures", captureId);
+    await expect(readFile(join(captureDirectory, "selected-text.txt"), "utf8"))
+      .resolves.toBe("A captured sentence.");
+    await expect(readFile(join(captureDirectory, "manifest.json"), "utf8"))
+      .resolves.toContain('"complete": true');
   });
 
   it("uses the persisted global output directory when no task or MCP root is configured", async () => {

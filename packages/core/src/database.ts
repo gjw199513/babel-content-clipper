@@ -36,6 +36,14 @@ export interface MetaRecord {
   readonly value: number | string;
 }
 
+export interface CaptureSourceContextRecord {
+  readonly captureId: string;
+  readonly profileId: string;
+  readonly createdAt: string;
+  readonly pageUrl?: string;
+  readonly mediaUrl?: string;
+}
+
 export interface CoreDatabaseSchema extends DBSchema {
   captures: {
     key: string;
@@ -44,6 +52,13 @@ export interface CoreDatabaseSchema extends DBSchema {
       "by-profile-created": [string, string];
       "by-profile-source": [string, string];
       "by-profile-collection": [string, string];
+    };
+  };
+  sourceContexts: {
+    key: string;
+    value: CaptureSourceContextRecord;
+    indexes: {
+      "by-profile": string;
     };
   };
   jobs: {
@@ -164,6 +179,10 @@ export async function openClipperDatabase(
         cleanupPreviews.createIndex("by-profile", "profileId");
 
         database.createObjectStore("meta", { keyPath: "key" });
+      }
+      if (oldVersion < 2) {
+        const sourceContexts = database.createObjectStore("sourceContexts", { keyPath: "captureId" });
+        sourceContexts.createIndex("by-profile", "profileId");
       }
     },
   });

@@ -18,7 +18,7 @@
 
 Babel Content Clipper 是一套 Chrome 擴充功能與本機 MCP 元件。瀏覽網頁時，你可以主動儲存選取的文字、圖片、頁面區域及影音時間範圍，再由自己的 Agent 領取工作、產生檔案並回寫處理結果。
 
-目前版本為 `0.1.0-alpha.1`，已提供版本化 GitHub Release 附件，同時保留原始碼建置及本機載入方式。它是 DSH 配套方案的一部分，也可獨立使用。
+目前版本為 `0.1.1`，已提供版本化發行附件，同時保留原始碼建置及本機載入方式。它是 DSH 配套方案的一部分，也可獨立使用。
 
 專案儲存庫：[GitHub](https://github.com/gjw199513/babel-content-clipper) · 版本下載：[GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)
 
@@ -42,7 +42,7 @@ Babel Content Clipper 是一套 Chrome 擴充功能與本機 MCP 元件。瀏覽
     → 每筆記錄各自輸出檔案並回寫結果
 ```
 
-擴充功能儲存來源、原文或媒體位置，並管理待辦與歷史記錄；Agent 負責取得來源、裁切、OCR、ASR、摘要或其他後續工作。查詢清單或收到提醒都不會自動開始下載或處理。
+擴充功能儲存來源、原文或媒體位置，並管理待辦與歷史記錄；需要來源媒體時，Agent 透過 MCP 請已連線的 Babel 擴充功能取得並匯出，之後才由 Agent 使用自己的工具進行裁切、OCR、ASR、摘要或其他本機後處理。查詢清單或收到提醒都不會自動開始取得或處理。
 
 ## 功能與邊界
 
@@ -64,7 +64,7 @@ Babel Content Clipper 是一套 Chrome 擴充功能與本機 MCP 元件。瀏覽
 - 輸出目錄依「本次工作指定 → MCP 連線預設值 → 擴充功能全域預設值」的順序解析；單次覆寫不會修改已儲存的預設值。
 - 既有結果及失敗歷史不會被後續處理覆寫；成功後也不會自動清除原始記錄。
 
-本專案不內建 ASR、OCR、摘要服務、媒體下載器或 FFmpeg。使用者明確要求處理後，Agent 可以呼叫其環境中既有的工具；一般擷取不需要安裝 FFmpeg。完整執行規則請參閱 [Agent 執行契約](agent-workflow.md)。
+本專案不內建雲端 ASR、OCR 或摘要服務。MCP 只匯出擷取內容、提供結構化處理指南、驗證 claim 並將取源請求交給已連線的 Babel 擴充功能。Agent 呼叫 `babel_clipper_acquire_source_media` 後，再以 `babel_clipper_export_capture` 將擴充功能附件匯出到本機，最後才使用 FFmpeg、sherpa-onnx 與 LLM 做後處理。Agent 不得使用自己的下載器、CUA、Playwright、Puppeteer 或瀏覽器點擊取得來源媒體。完整規則請參閱 [Agent 執行契約](agent-workflow.md)與[擴充功能取源 Spec](../../specs/Babel_Content_Clipper_Browser_Extension_Acquisition_Spec_2026-09-21.md)。
 
 ## 快速開始
 
@@ -196,7 +196,7 @@ Windows、Linux、Firefox、Safari、遠端 Agent 及行動瀏覽器尚未列為
 |---|---|
 | `apps/extension` | Chrome MV3 擴充功能、側邊欄、素材庫、擷取與現場錄製 |
 | `packages/core` | 資料契約、IndexedDB、狀態機、時間範圍及交易規則 |
-| `packages/mcp` | MCP stdio 服務、Native Messaging、本機 broker、安裝與診斷 |
+| `packages/mcp` | MCP stdio、Native Messaging、本機 broker、安裝/診斷、Capture 匯出、來源交接與 Agent 指南 |
 | `docs` | 安裝、架構、相容性、Agent 契約、驗收及產品規範 |
 | `scripts` | 建置、靜態檢查、測試素材服務與本機打包 |
 | `tests` | Core、MCP、整合及瀏覽器驗證 |
@@ -229,6 +229,7 @@ npm run package:release
 - [安裝與首次連線](install.md)
 - [Release 發佈清單](../../release.md) — 簡體中文
 - [Agent 執行契約](agent-workflow.md)
+- [影片文字擷取 Agent 指南（簡體中文）](../../agent-guides/video-text-extraction.md)
 - [架構與邊界](../../architecture.md) — 簡體中文
 - [相容範圍與驗證環境](../../compatibility.md) — 簡體中文
 - [驗收涵蓋範圍與證據](../../acceptance.md) — 簡體中文

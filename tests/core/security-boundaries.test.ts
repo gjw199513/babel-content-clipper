@@ -90,6 +90,59 @@ describe("URL credential boundaries", () => {
     expect(serialized).not.toMatch(/dummy-(?:page|canonical|chapter|frame|media|poster|resource|thumb)/u);
     expect(detail.capture.sourceKey).toBe("https://example.test/canonical");
   });
+
+  it("keeps acquisition context private while allowing a claimed Job to resolve it", async () => {
+    const target = service();
+    const privatePageUrl = "https://www.xiaohongshu.com/explore/demo?xsec_token=private-value&xsec_source=pc_search";
+    const created = await target.handle("capture.create", {
+      requestId: "private-acquisition-capture",
+      input: {
+        kind: "media_range",
+        state: "sealed",
+        source: {
+          title: "Private source context",
+          pageUrl: "https://www.xiaohongshu.com/explore/demo",
+          acquisitionUrl: privatePageUrl,
+          site: "www.xiaohongshu.com",
+          mediaAcquisitionUrl: "blob:https://www.xiaohongshu.com/temporary",
+        },
+        selection: {
+          type: "media",
+          target: "media_object",
+          timeBasis: "source_media",
+          startClick: { mediaSeconds: 1, wallTime: "2026-09-21T00:00:00.000Z" },
+          endClick: { mediaSeconds: 2, wallTime: "2026-09-21T00:00:01.000Z" },
+          segments: [{ start: 1, end: 2 }],
+        },
+        captureMethod: "security-fixture",
+        assetsState: "location_only",
+        integrity: { status: "complete_selection", missing: [] },
+      },
+    }) as CaptureCreateResult;
+    const captureId = created.value.capture.captureId;
+    const jobId = created.value.job?.jobId;
+    if (!jobId) throw new Error("media fixture did not create a Job");
+    const claimed = await target.handle("job.claim", {
+      requestId: "private-acquisition-claim",
+      agentId: "private-acquisition-agent",
+      jobIds: [jobId],
+      requireOutputDirectory: false,
+    }) as { items: Array<{ claimToken?: string }> };
+    const claimToken = claimed.items[0]?.claimToken;
+    if (!claimToken) throw new Error("media fixture was not claimed");
+
+    const detail = await target.handle("capture.get", { captureId }) as CaptureDetailResult;
+    const backup = await target.handle("backup.export", { includeAttachmentData: false }) as BackupBundle;
+    expect(JSON.stringify({ detail, backup })).not.toContain("private-value");
+
+    const context = await target.handle("capture.getAcquisitionSource", {
+      captureId,
+      jobId,
+      claimToken,
+    });
+    expect(context).toMatchObject({ captureId, jobId, pageUrl: privatePageUrl, mediaUrl: "blob:https://www.xiaohongshu.com/temporary" });
+    expect(JSON.stringify(context)).toContain("private-value");
+  });
 });
 
 describe("bounded mixed-selection images and visible partial results", () => {

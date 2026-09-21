@@ -285,6 +285,70 @@ test("仅收藏往返保留待处理事实，复制任务说明只复制不领�
   }
 });
 
+test("统一处理说明一次包含全部真实待办，复制不会领取或混入终态记录", async () => {
+  const run = await launchContext("pending-batch-copy");
+  try {
+    const id = await extensionId(run.context);
+    await run.context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `chrome-extension://${id}` }).catch(() => undefined);
+    const library = await extensionPage(run.context, id, "library.html");
+    const first = await createFixture(library, "pending-batch-first", "BATCH_PENDING_FIRST_UNTRUSTED_TEXT");
+    const second = await createFixture(library, "pending-batch-second", "BATCH_PENDING_SECOND_UNTRUSTED_TEXT");
+    const completed = await createFixture(library, "pending-batch-completed", "BATCH_COMPLETED_UNTRUSTED_TEXT");
+    await completeFixture(library, completed.jobId);
+
+    await library.reload();
+    await library.waitForLoadState("domcontentloaded");
+    await waitRows(library, 3);
+    await expect(library.getByRole("button", { name: "复制统一处理说明" })).toBeVisible();
+
+    await library.evaluate(() => {
+      Object.defineProperty(navigator.clipboard, "writeText", {
+        configurable: true,
+        value: (value: string) => {
+          sessionStorage.setItem("babel-test-batch-clipboard", value);
+          return Promise.resolve();
+        },
+      });
+    });
+    await library.getByRole("button", { name: "复制统一处理说明" }).click();
+    await expect(library.locator("#toast")).toContainText("已复制 2 条待办");
+    const clipboardText = await library.evaluate(() => sessionStorage.getItem("babel-test-batch-clipboard") ?? "");
+
+    expect(clipboardText).toContain(first.captureId);
+    expect(clipboardText).toContain(first.jobId);
+    expect(clipboardText).toContain(second.captureId);
+    expect(clipboardText).toContain(second.jobId);
+    expect(clipboardText).not.toContain(completed.captureId);
+    expect(clipboardText).not.toContain(completed.jobId);
+    expect(clipboardText).toContain("pending_batch_processing");
+    expect(clipboardText).toContain("每次最多 200 个 jobId");
+    expect(clipboardText).toContain("只处理 accepted 项");
+    expect(clipboardText).not.toContain("BATCH_PENDING_FIRST_UNTRUSTED_TEXT");
+    expect(clipboardText).not.toContain("BATCH_PENDING_SECOND_UNTRUSTED_TEXT");
+    expect(clipboardText).not.toContain("claimToken");
+    expect((await core<CaptureDetail>(library, "capture.get", { captureId: first.captureId })).jobs.at(-1)?.status).toBe("pending");
+    expect((await core<CaptureDetail>(library, "capture.get", { captureId: second.captureId })).jobs.at(-1)?.status).toBe("pending");
+    expect((await core<CaptureDetail>(library, "capture.get", { captureId: completed.captureId })).jobs.at(-1)?.status).toBe("completed");
+
+    await selectLibraryRow(library, "BATCH_PENDING_FIRST_UNTRUSTED_TEXT");
+    await expect(library.getByRole("button", { name: "重新处理" })).toHaveCount(0);
+    await selectLibraryRow(library, "BATCH_COMPLETED_UNTRUSTED_TEXT");
+    await expect(library.getByRole("button", { name: "重新处理" })).toBeVisible();
+    await library.screenshot({ path: resolve(evidencePath, "organization-pending-batch-copy.png"), fullPage: true });
+    await saveEvidence("organization-pending-batch-copy.json", {
+      fixtureSetup: "Three trusted Core fixtures created two pending Jobs and one completed Job; the real library batch button generated the clipboard payload.",
+      copiedPendingCaptureIds: [first.captureId, second.captureId],
+      excludedCompletedCaptureId: completed.captureId,
+      copyHadNoClaimSideEffect: true,
+      untrustedCaptureTextExcluded: true,
+      pendingDetailHidesReprocess: true,
+      completedDetailShowsReprocess: true,
+    });
+  } finally {
+    await run.context.close();
+  }
+});
+
 test("逐来源清理只删除已处理记录，并让另一打开视图清空已选详情", async () => {
   const run = await launchContext("source-cleanup");
   try {

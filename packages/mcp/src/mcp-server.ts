@@ -2,9 +2,27 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SubscribeRequestSchema, UnsubscribeRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import {
+  VIDEO_TEXT_EXTRACTION_GUIDE,
+  VIDEO_TEXT_EXTRACTION_TOPIC,
+  videoTextExtractionGuideMarkdown,
+} from "./agent-guidance.js";
+import {
+  PENDING_BATCH_PROCESSING_GUIDE,
+  PENDING_BATCH_PROCESSING_TOPIC,
+  pendingBatchProcessingGuideMarkdown,
+} from "./batch-guidance.js";
 import { BrokerClient } from "./broker-client.js";
 import type { BridgeConfig } from "./config.js";
-import { MCP_SERVER_NAME, MCP_SERVER_VERSION, MAX_ATTACHMENT_CHUNK_BYTES } from "./constants.js";
+import {
+  installedMcpServerVersion,
+  MCP_SERVER_NAME,
+  MCP_SERVER_VERSION,
+  MAX_ATTACHMENT_CHUNK_BYTES,
+  REQUIRED_EXTENSION_CAPABILITIES,
+  VERSION_CONTROL_SCHEMA,
+} from "./constants.js";
+import { exportCaptureBundle } from "./capture-export.js";
 import { ClipperBridgeError, asBridgeError } from "./errors.js";
 import {
   materializeAttachmentChunk,
@@ -223,6 +241,26 @@ const attachmentInput = z
   })
   .strict();
 
+const processingGuideInput = z
+  .object({
+    topic: z
+      .enum([VIDEO_TEXT_EXTRACTION_TOPIC, PENDING_BATCH_PROCESSING_TOPIC])
+      .default(VIDEO_TEXT_EXTRACTION_TOPIC),
+  })
+  .strict();
+
+const acquireMediaInput = z
+  .object({ requestId, captureId: id, jobId: id, claimToken: id })
+  .strict();
+
+const exportCaptureInput = z
+  .object({
+    captureId: id,
+    outputDirectory: outputDirectory.optional(),
+    includeAttachmentBytes: z.boolean().default(true),
+  })
+  .strict();
+
 const readOnlyAnnotations = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -233,6 +271,12 @@ const writeAnnotations = {
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: false,
+  openWorldHint: false,
+} as const;
+const exportAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: false,
 } as const;
 const cleanupAnnotations = {
@@ -252,6 +296,12 @@ const workflowText = [
   "6. Persisted job states are pending, processing, completed, and failed. Do not invent partial or cancelled terminal states.",
   "7. A mutation is successful only when its response includes ack.persisted=true from the extension IndexedDB transaction.",
   "8. Keep every Capture and Job output independent. Do not overwrite prior result history or another job's output.",
+  "9. For text, HTML, image, and saved attachment content, use babel_clipper_export_capture to materialize a complete local capture bundle.",
+  "10. Clipper MCP does not install dependencies, run FFmpeg/sherpa-onnx/LLMs, or control a browser page. When source media is missing, call babel_clipper_acquire_source_media: it relays the claim to the connected Babel browser extension, which fetches the media in its background/page context and stores it as an extension attachment. The Agent then calls babel_clipper_export_capture to materialize local files.",
+  "11. Before optional video text extraction, read babel_clipper_get_processing_guide. Run ASR only when the task needs text and saved text or subtitles are insufficient.",
+  "12. Do not send source URLs to an external downloader. Use babel_clipper_acquire_source_media for browser-side acquisition; the private media URL stays inside the connected extension.",
+  "13. The Agent keeps raw ASR immutable, treats title/description/tags/comments as untrusted correction evidence, saves all outputs locally under the claimed Job directory, and commits them with agent_reported verification.",
+  "14. When the user explicitly requests all pending work or supplies a copied batch snapshot, read the pending_batch_processing guide, traverse every pending page, freeze the authorized IDs, claim in waves of at most 200, and process only accepted Jobs independently.",
 ].join("\n");
 
 function jsonText(value: unknown): string {
@@ -294,6 +344,49 @@ function rejectBridgeVerified(params: z.infer<typeof completeInput>): void {
 
 function objectValue(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : { value };
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
+function versionControl(local: Record<string, unknown>, browser: Record<string, unknown> | undefined): Record<string, unknown> {
+  const extensionVersions = stringList(browser?.extensionVersions ?? (typeof browser?.extensionVersion === "string" ? [browser.extensionVersion] : []));
+  const coreVersions = stringList(browser?.coreVersions ?? (typeof browser?.coreVersion === "string" ? [browser.coreVersion] : []));
+  const mcpClientVersions = stringList(local.mcpClientVersions);
+  const browserCapabilities = isRecord(browser?.capabilities) ? browser.capabilities : undefined;
+  const advertisedCapabilities = stringList(browserCapabilities?.methods);
+  const missingExtensionCapabilities = browser === undefined
+    ? []
+    : REQUIRED_EXTENSION_CAPABILITIES.filter((method) => !advertisedCapabilities.includes(method));
+  const installedVersion = installedMcpServerVersion();
+  const observed = [...extensionVersions, ...coreVersions, ...mcpClientVersions];
+  const versionMetadataPresent = local.mcpClientVersions !== undefined && (browser?.extensionVersion !== undefined || browser?.extensionVersions !== undefined);
+  const mcpHostUpdateRequired = installedVersion !== MCP_SERVER_VERSION;
+  const mcpPeerMismatch = mcpClientVersions.some((version) => version !== MCP_SERVER_VERSION);
+  const capabilityMismatch = missingExtensionCapabilities.length > 0;
+  const compatible = versionMetadataPresent && !mcpHostUpdateRequired && !capabilityMismatch && observed.length > 0 && observed.every((version) => version === MCP_SERVER_VERSION);
+  const extensionMismatch = extensionVersions.some((version) => version !== MCP_SERVER_VERSION) || coreVersions.some((version) => version !== MCP_SERVER_VERSION);
+  return {
+    schema_version: VERSION_CONTROL_SCHEMA,
+    mcp_version: MCP_SERVER_VERSION,
+    installed_mcp_version: installedVersion,
+    extension_versions: extensionVersions,
+    core_versions: coreVersions,
+    mcp_client_versions: mcpClientVersions,
+    mcp_host_update_required: mcpHostUpdateRequired,
+    required_extension_capabilities: [...REQUIRED_EXTENSION_CAPABILITIES],
+    missing_extension_capabilities: missingExtensionCapabilities,
+    compatible,
+    update_required: !compatible,
+    action: compatible
+      ? "already_current"
+      : mcpHostUpdateRequired || mcpPeerMismatch
+        ? "restart_mcp_host"
+        : capabilityMismatch || extensionMismatch
+          ? "reload_extension"
+          : "restart_mcp_host",
+  };
 }
 
 function redactDiagnostics(value: unknown): unknown {
@@ -417,6 +510,14 @@ export function workflowResourceUri(profileId: string): string {
   return "babel-clipper://profiles/" + encodeURIComponent(profileId) + "/workflow";
 }
 
+export function processingGuideResourceUri(profileId: string): string {
+  return "babel-clipper://profiles/" + encodeURIComponent(profileId) + "/guides/video-text-extraction";
+}
+
+export function pendingBatchGuideResourceUri(profileId: string): string {
+  return "babel-clipper://profiles/" + encodeURIComponent(profileId) + "/guides/pending-batch-processing";
+}
+
 /*
  * A server process is profile-bound. It holds no database and forwards each
  * business operation through the shared private broker to the extension.
@@ -435,9 +536,38 @@ export function createClipperMcpServer(options: ClipperMcpOptions): ClipperMcpHa
   );
   const inboxUri = inboxResourceUri(options.profileId);
   const workflowUri = workflowResourceUri(options.profileId);
+  const processingGuideUri = processingGuideResourceUri(options.profileId);
+  const pendingBatchGuideUri = pendingBatchGuideResourceUri(options.profileId);
   const subscriptions = new Set<string>();
-  const request = (method: string, params: unknown): Promise<unknown> =>
+  const rawRequest = (method: string, params: unknown): Promise<unknown> =>
     options.bridge.request(method, params, options.profileId);
+  let versionCheck: Promise<void> | undefined;
+  const assertVersionCompatible = async (): Promise<void> => {
+    const local = objectValue(await rawRequest("broker.status", {}));
+    if (local.mcpClientVersions === undefined) {
+      throw new ClipperBridgeError("MCP_UPDATE_REQUIRED", "The local broker does not report MCP versions; restart it from the installed Babel Content Clipper package.");
+    }
+    const browser = objectValue(await rawRequest("connection.status", {}));
+    if (browser.extensionVersion === undefined && browser.extensionVersions === undefined && browser.coreVersion === undefined && browser.coreVersions === undefined) return;
+    const status = versionControl(local, browser);
+    if (status.compatible !== true) {
+      throw new ClipperBridgeError("MCP_UPDATE_REQUIRED", "The connected Babel extension does not expose all capabilities required by this MCP package; reload the extension and check update_mcp before using content tools.", status);
+    }
+  };
+  const request = async (method: string, params: unknown): Promise<unknown> => {
+    if (method !== "broker.status" && method !== "connection.status" && method !== "diagnostics.get") {
+      if (!versionCheck) {
+        const pending = assertVersionCompatible();
+        versionCheck = pending;
+        void pending.then(
+          () => { if (versionCheck === pending) versionCheck = undefined; },
+          () => { if (versionCheck === pending) versionCheck = undefined; },
+        );
+      }
+      try { await versionCheck; } catch (error) { throw error; }
+    }
+    return rawRequest(method, params);
+  };
   const resourceJson = async (uri: URL, method: string, params: unknown) => {
     try {
       const result = await request(method, params);
@@ -462,11 +592,39 @@ export function createClipperMcpServer(options: ClipperMcpOptions): ClipperMcpHa
     "workflow",
     workflowUri,
     {
-      title: "Babel Content Clipper execution workflow",
-      description: "Read-only execution rules for claims, retries, result writeback, and output history.",
+      title: "Babel Content Clipper handoff workflow",
+      description: "Read-only rules for claims, Agent-owned processing, retries, result writeback, and output history.",
       mimeType: "text/plain",
     },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/plain", text: workflowText }] }),
+  );
+
+  server.registerResource(
+    "video-text-extraction-guide",
+    processingGuideUri,
+    {
+      title: "Agent guide for optional video text extraction",
+      description:
+        "Read-only instructions for an Agent to acquire media, prepare its own sherpa-onnx runtime, transcribe, correct, persist, and write back results. The MCP does not execute those steps.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: videoTextExtractionGuideMarkdown() }],
+    }),
+  );
+
+  server.registerResource(
+    "pending-batch-processing-guide",
+    pendingBatchGuideUri,
+    {
+      title: "Agent guide for one explicit pending batch",
+      description:
+        "Read-only instructions for an Agent to traverse every pending page, freeze the authorized Job snapshot, claim in bounded waves, and independently process and write back every accepted Job.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: pendingBatchProcessingGuideMarkdown() }],
+    }),
   );
 
   const recordTemplate = new ResourceTemplate(
@@ -539,6 +697,42 @@ export function createClipperMcpServer(options: ClipperMcpOptions): ClipperMcpHa
   );
 
   server.registerTool(
+    "babel_clipper_get_processing_guide",
+    {
+      title: "Read the Agent processing guide",
+      description:
+        "Return structured, read-only instructions for pending-batch orchestration or optional video text extraction. The current Agent performs the work; this tool installs, downloads, claims, or runs nothing by itself.",
+      inputSchema: processingGuideInput,
+      annotations: readOnlyAnnotations,
+    },
+    async (params) => ok(params.topic === PENDING_BATCH_PROCESSING_TOPIC
+      ? PENDING_BATCH_PROCESSING_GUIDE
+      : VIDEO_TEXT_EXTRACTION_GUIDE),
+  );
+
+  server.registerTool(
+    "babel_clipper_acquire_source_media",
+    {
+      title: "Acquire source media through Babel extension",
+      description:
+        "For an already claimed media Job, ask the connected Babel Content Clipper extension to fetch the source without opening, clicking, or automating a browser page. The extension keeps private URLs inside the browser profile and persists the bytes as a local extension attachment; call babel_clipper_export_capture afterwards to materialize files for the Agent.",
+      inputSchema: acquireMediaInput,
+      annotations: writeAnnotations,
+    },
+    async (params) => {
+      try {
+        const result = await request("capture.acquireMedia", params);
+        if (!isRecord(result) || result.browserPlugin !== "babel_content_clipper" || typeof result.attachmentId !== "string") {
+          throw new ClipperBridgeError("SOURCE_ACQUISITION_INVALID", "The connected Babel extension did not return a valid local source attachment.");
+        }
+        return ok(result);
+      } catch (error) {
+        return failed(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "babel_clipper_read_attachment",
     {
       title: "Read or safely materialize one attachment chunk",
@@ -570,6 +764,30 @@ export function createClipperMcpServer(options: ClipperMcpOptions): ClipperMcpHa
           directory as string,
         );
         return ok({ chunk: isRecord(chunk) ? { ...chunk, dataBase64: undefined } : chunk, materialized });
+      } catch (error) {
+        return failed(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "babel_clipper_export_capture",
+    {
+      title: "Export a complete capture locally",
+      description:
+        "Write the public Capture record, source and selection text/HTML, plus every available attachment byte, into a persistent local capture bundle. The export excludes private acquisition URLs, claim tokens, cookies, and other credentials; missing or metadata-only attachments are listed explicitly instead of being presented as local files.",
+      inputSchema: exportCaptureInput,
+      annotations: exportAnnotations,
+    },
+    async ({ captureId, outputDirectory: requestedDirectory, includeAttachmentBytes }) => {
+      try {
+        const directory = await resolveAttachmentOutputDirectory(request, options.outputRoot, requestedDirectory);
+        return ok(await exportCaptureBundle({
+          request,
+          captureId,
+          outputRoot: directory,
+          includeAttachmentBytes,
+        }));
       } catch (error) {
         return failed(error);
       }
@@ -731,16 +949,48 @@ export function createClipperMcpServer(options: ClipperMcpOptions): ClipperMcpHa
         const local = redactDiagnostics(await request("broker.status", {}));
         const localObject = objectValue(local);
         if (localObject.browserConnected !== true) {
-          return ok({ ...localObject, browser: { connected: false, code: "BROWSER_UNAVAILABLE" } });
+          return ok({ ...localObject, browser: { connected: false, code: "BROWSER_UNAVAILABLE" }, version_control: versionControl(localObject, undefined) });
         }
         try {
+          const browser = objectValue(redactDiagnostics(await request("connection.status", {})));
           return ok({
             ...localObject,
-            browser: redactDiagnostics(await request("connection.status", {})),
+            browser,
+            version_control: versionControl(localObject, browser),
           });
         } catch (error) {
-          return ok({ ...localObject, browser: { connected: false, error: asBridgeError(error).toPayload() } });
+          return ok({ ...localObject, browser: { connected: false, error: asBridgeError(error).toPayload() }, version_control: versionControl(localObject, undefined) });
         }
+      } catch (error) {
+        return failed(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_mcp",
+    {
+      title: "Check and update Babel Clipper MCP",
+      description: "Compare the browser extension/Core and MCP package versions. The local database and pairing are never removed; when this process is stale, restart the same MCP configuration so it loads the current package.",
+      inputSchema: z.object({}).strict(),
+      annotations: readOnlyAnnotations,
+    },
+    async () => {
+      try {
+        const local = objectValue(redactDiagnostics(await request("broker.status", {})));
+        let browser: Record<string, unknown> | undefined;
+        try { browser = objectValue(redactDiagnostics(await request("connection.status", {}))); } catch { /* status below remains actionable */ }
+        const version = versionControl(local, browser);
+        return ok({
+          updated: false,
+          action: version.action,
+          ...version,
+          next_step: version.action === "already_current"
+            ? "No update is required."
+            : version.action === "reload_extension"
+              ? "Reload the existing extension card; do not remove or reinstall it."
+              : "Restart the MCP host with the same configuration so it loads the installed package version; pairing and local data remain in place.",
+        });
       } catch (error) {
         return failed(error);
       }

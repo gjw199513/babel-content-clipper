@@ -21,7 +21,7 @@ export type UiMethod =
   | "settings.get"
   | "settings.update";
 
-export type NativeMethod = UiMethod | "attachment.get" | "attachment.create" | "attachment.appendChunk" | "attachment.complete" | "bridge.hello";
+export type NativeMethod = UiMethod | "capture.getAcquisitionSource" | "capture.acquireMedia" | "attachment.get" | "attachment.create" | "attachment.appendChunk" | "attachment.complete" | "bridge.hello";
 
 export interface CoreUiMessage {
   channel: typeof EXTENSION_CHANNEL;
@@ -49,7 +49,7 @@ export interface ContentCommandMessage {
   channel: typeof EXTENSION_CHANNEL;
   type: "content_command";
   requestId?: string;
-  command: "capture_selection" | "capture_media" | "begin_region";
+  command: "capture_selection" | "capture_media" | "begin_region" | "acquire_media";
   context?: {
     menuItemId?: string;
     srcUrl?: string;
@@ -59,6 +59,8 @@ export interface ContentCommandMessage {
     captureId?: string;
     documentInstanceId?: string;
     frameId?: number;
+    /** A claim-bound, private source URL supplied only by the extension background. */
+    sourceUrl?: string;
   };
 }
 
@@ -69,6 +71,36 @@ export interface ContentReplyMessage {
   ok: boolean;
   payload?: unknown;
   error?: { code: string; message: string; details?: unknown };
+}
+
+export interface SourceStreamStartMessage {
+  channel: typeof EXTENSION_CHANNEL;
+  type: "source_stream_start";
+  requestId: string;
+  mimeType: string;
+  totalBytes?: number;
+}
+
+export interface SourceStreamChunkMessage {
+  channel: typeof EXTENSION_CHANNEL;
+  type: "source_stream_chunk";
+  requestId: string;
+  offset: number;
+  dataBase64: string;
+}
+
+export interface SourceStreamCompleteMessage {
+  channel: typeof EXTENSION_CHANNEL;
+  type: "source_stream_complete";
+  requestId: string;
+  totalBytes: number;
+}
+
+export interface SourceStreamErrorMessage {
+  channel: typeof EXTENSION_CHANNEL;
+  type: "source_stream_error";
+  requestId: string;
+  error: { code: string; message: string; details?: unknown };
 }
 
 export interface RecorderChunkMessage {
@@ -110,7 +142,7 @@ export interface RecorderStopMessage {
   reason?: RecorderStatusMessage["stopReason"];
 }
 
-export type ExtensionMessage = CoreUiMessage | UiOpenLibraryMessage | UiActionMessage | ContentCommandMessage | ContentReplyMessage | RecorderChunkMessage | RecorderStatusMessage | RecorderStatusQueryMessage | RecorderStopMessage;
+export type ExtensionMessage = CoreUiMessage | UiOpenLibraryMessage | UiActionMessage | ContentCommandMessage | ContentReplyMessage | SourceStreamStartMessage | SourceStreamChunkMessage | SourceStreamCompleteMessage | SourceStreamErrorMessage | RecorderChunkMessage | RecorderStatusMessage | RecorderStatusQueryMessage | RecorderStopMessage;
 
 export function isUiMethod(value: unknown): value is UiMethod {
   return typeof value === "string" && [
@@ -121,7 +153,7 @@ export function isUiMethod(value: unknown): value is UiMethod {
 }
 
 export function isNativeMethod(value: unknown): value is NativeMethod {
-  return isUiMethod(value) || ["attachment.get", "attachment.create", "attachment.appendChunk", "attachment.complete", "bridge.hello"].includes(String(value));
+  return isUiMethod(value) || ["capture.getAcquisitionSource", "capture.acquireMedia", "attachment.get", "attachment.create", "attachment.appendChunk", "attachment.complete", "bridge.hello"].includes(String(value));
 }
 
 export function isCoreUiMessage(value: unknown): value is CoreUiMessage {
@@ -134,7 +166,15 @@ export function isContentCommand(value: unknown): value is ContentCommandMessage
   if (!value || typeof value !== "object") return false;
   const message = value as Partial<ContentCommandMessage>;
   return message.channel === EXTENSION_CHANNEL && message.type === "content_command"
-    && ["capture_selection", "capture_media", "begin_region"].includes(String(message.command));
+    && ["capture_selection", "capture_media", "begin_region", "acquire_media"].includes(String(message.command));
+}
+
+export function isSourceStreamMessage(value: unknown): value is SourceStreamStartMessage | SourceStreamChunkMessage | SourceStreamCompleteMessage | SourceStreamErrorMessage {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Partial<SourceStreamStartMessage | SourceStreamChunkMessage | SourceStreamCompleteMessage | SourceStreamErrorMessage>;
+  return message.channel === EXTENSION_CHANNEL
+    && ["source_stream_start", "source_stream_chunk", "source_stream_complete", "source_stream_error"].includes(String(message.type))
+    && typeof message.requestId === "string";
 }
 
 export function isRecorderMessage(value: unknown): value is RecorderChunkMessage | RecorderStatusMessage {

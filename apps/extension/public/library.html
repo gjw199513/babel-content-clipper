@@ -14,12 +14,14 @@
         <div class="library-intro"><div class="library-brand"><img class="brand-mark" src="icons/logo.svg" width="36" height="36" alt=""><p class="eyebrow" data-i18n="Babel Content Clipper · 素材库">Babel Content Clipper · 素材库</p></div><h1 data-i18n="素材库">素材库</h1><p class="lede" data-i18n="按来源整理你明确留下的文字、图片、区域截图和媒体区间。">按来源整理你明确留下的文字、图片、区域截图和媒体区间。</p></div>
         <div class="header-tools">
           <div class="header-preferences"><div id="language-control" class="language-slot"></div><button id="help" type="button" data-tone="quiet" data-i18n="关于与使用帮助">关于与使用帮助</button></div>
-          <div class="header-actions"><button id="settings" type="button" data-tone="quiet"><span data-i18n="连接与设置">连接与设置</span><span aria-hidden="true">↗</span></button></div>
+          <div class="header-actions"><button id="settings" type="button" data-tone="quiet" title="打开连接设置" aria-label="打开连接设置" data-i18n-title="打开连接设置" data-i18n-aria-label="打开连接设置"><span data-i18n="连接设置">连接设置</span><span aria-hidden="true">↗</span></button></div>
           <input id="import-file" class="visually-hidden" type="file" accept="application/json,.json">
         </div>
       </header>
+      <section id="connection-banner" class="connection-banner" aria-live="polite" hidden></section>
       <nav class="view-tabs" aria-label="记录视图" data-i18n-aria-label="记录视图"><button class="tab is-active" data-view="all" type="button" data-i18n="全部">全部</button><button class="tab" data-view="pending" type="button" data-i18n="待处理">待处理</button><button class="tab" data-view="history" type="button" data-i18n="历史">历史</button><button class="tab" data-view="saved" type="button" data-i18n="仅收藏">仅收藏</button></nav>
       <section class="library-toolbar" aria-label="筛选与搜索" data-i18n-aria-label="筛选与搜索"><label class="search-field"><span data-i18n="搜索记录">搜索记录</span><input id="search" type="search" placeholder="标题、来源或原文" data-i18n-placeholder="标题、来源或原文" autocomplete="off"></label><label><span data-i18n="来源">来源</span><select id="source-filter"><option value="" data-i18n="全部来源">全部来源</option></select></label><label><span data-i18n="日期">日期</span><select id="date-filter"><option value="" data-i18n="全部日期">全部日期</option><option value="today" data-i18n="今天">今天</option><option value="week" data-i18n="最近 7 天">最近 7 天</option></select></label><button id="clear-filters" type="button" data-tone="quiet" data-i18n="清除">清除</button></section>
+      <section class="batch-handoff" aria-label="统一处理待办" data-i18n-aria-label="统一处理待办"><p><strong data-i18n="统一处理待办">统一处理待办</strong><span data-i18n="一次生成当前筛选范围内全部待处理工作项的 Agent 指令，无需逐条打开记录。">一次生成当前筛选范围内全部待处理工作项的 Agent 指令，无需逐条打开记录。</span></p><button id="copy-pending-batch" type="button" data-tone="accent" data-i18n="复制统一处理说明">复制统一处理说明</button></section>
       <details class="maintenance-panel">
         <summary data-i18n="备份与维护">备份与维护</summary>
         <div class="maintenance-content">

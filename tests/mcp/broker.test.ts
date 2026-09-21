@@ -53,6 +53,7 @@ describe("private local broker", () => {
     const alphaOne = await connected(config, "mcp", "profile-alpha");
     const alphaTwo = await connected(config, "mcp", "profile-alpha");
     const beta = await connected(config, "mcp", "profile-beta");
+    expect(broker.status().mcpClientVersions).toHaveLength(3);
 
     const [one, two, three] = await Promise.all([
       alphaOne.request("capture.list", { view: "pending" }),

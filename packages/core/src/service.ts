@@ -1,6 +1,7 @@
 import type { IDBPDatabase } from "idb";
 
 import {
+  type CaptureSourceContextRecord,
   type CleanupSnapshotRecord,
   type CoreDatabaseSchema,
   type MetaRecord,
@@ -12,7 +13,9 @@ import { addPadding, normalizeRanges, resolveOutputDirectory, validateDirectory 
 import { redactUrlCredentials } from "./url-security.js";
 import {
   CORE_METHODS,
+  CORE_DATABASE_VERSION,
   CORE_SCHEMA_VERSION,
+  EXTENSION_CAPABILITY_METHODS,
   MAX_ATTACHMENT_CHUNK_BYTES,
   type AttachmentChunkRecord,
   type AttachmentGetResult,
@@ -20,6 +23,7 @@ import {
   type BackupBundle,
   type BackupImportResult,
   type CaptureCreateInput,
+  type CaptureAcquisitionSource,
   type CaptureDetailResult,
   type CaptureDraftObservations,
   type CaptureFinalizeInput,
@@ -53,6 +57,7 @@ import {
   type RecordingFailureFact,
   type TimeRange,
   type VerificationReport,
+  type SourceSnapshot,
 } from "./types.js";
 import { assertCurrentBackupVersion, parseMethodParams } from "./validation.js";
 import {
@@ -103,6 +108,12 @@ function withEffectiveAttachmentAvailability(attachment: AttachmentRecord): Atta
 interface CaptureCreateParams {
   readonly requestId: string;
   readonly input: CaptureCreateInput;
+}
+
+interface CaptureAcquisitionSourceParams {
+  readonly captureId: string;
+  readonly jobId: string;
+  readonly claimToken: string;
 }
 
 interface CaptureUpdateDraftParams {
@@ -365,6 +376,38 @@ function sourceKey(source: CaptureCreateInput["source"]): string {
   return source.canonicalUrl ?? source.pageUrl;
 }
 
+function privateSourceUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.length > 8192) return undefined;
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== "https:" && url.protocol !== "http:" && url.protocol !== "blob:") || url.username || url.password) {
+      return undefined;
+    }
+    if (url.protocol === "blob:" && !/^https?:/iu.test(url.pathname)) return undefined;
+    return url.href;
+  } catch {
+    return undefined;
+  }
+}
+
+function captureSourceContext(
+  source: CaptureCreateInput["source"],
+  captureId: string,
+  profileId: string,
+  createdAt: string,
+): CaptureSourceContextRecord | undefined {
+  const pageUrl = privateSourceUrl(source.acquisitionUrl);
+  const mediaUrl = privateSourceUrl(source.mediaAcquisitionUrl);
+  if (!pageUrl && !mediaUrl) return undefined;
+  return {
+    captureId,
+    profileId,
+    createdAt,
+    ...(pageUrl ? { pageUrl } : {}),
+    ...(mediaUrl ? { mediaUrl } : {}),
+  };
+}
+
 function redactUrlMetadataValue(value: unknown, key?: string, depth = 0): unknown {
   if (depth > 12) return value;
   if (
@@ -388,27 +431,28 @@ function redactUrlMetadataValue(value: unknown, key?: string, depth = 0): unknow
 
 function redactCaptureSourceUrls(
   source: CaptureCreateInput["source"],
-): CaptureCreateInput["source"] {
+): SourceSnapshot {
+  const { acquisitionUrl: _acquisitionUrl, mediaAcquisitionUrl: _mediaAcquisitionUrl, ...publicSource } = source;
   return {
-    ...source,
-    pageUrl: redactUrlCredentials(source.pageUrl),
-    ...(source.canonicalUrl
-      ? { canonicalUrl: redactUrlCredentials(source.canonicalUrl) }
+    ...publicSource,
+    pageUrl: redactUrlCredentials(publicSource.pageUrl),
+    ...(publicSource.canonicalUrl
+      ? { canonicalUrl: redactUrlCredentials(publicSource.canonicalUrl) }
       : {}),
-    ...(source.chapterHref ? { chapterHref: redactUrlCredentials(source.chapterHref) } : {}),
-    ...(source.frame
+    ...(publicSource.chapterHref ? { chapterHref: redactUrlCredentials(publicSource.chapterHref) } : {}),
+    ...(publicSource.frame
       ? {
           frame: {
-            ...source.frame,
-            ...(source.frame.frameUrl
-              ? { frameUrl: redactUrlCredentials(source.frame.frameUrl) }
+            ...publicSource.frame,
+            ...(publicSource.frame.frameUrl
+              ? { frameUrl: redactUrlCredentials(publicSource.frame.frameUrl) }
               : {}),
           },
         }
       : {}),
-    ...(source.metadata
+    ...(publicSource.metadata
       ? {
-          metadata: redactUrlMetadataValue(source.metadata) as CaptureCreateInput["source"]["metadata"],
+          metadata: redactUrlMetadataValue(publicSource.metadata) as CaptureCreateInput["source"]["metadata"],
         }
       : {}),
   };
@@ -1098,6 +1142,8 @@ function validateBackupBundle(bundle: BackupImportParams["bundle"]): void {
 class ClipperServiceImpl implements CoreService {
   readonly #databaseName: string;
   readonly #defaultProfileId: string;
+  readonly #extensionVersion?: string;
+  readonly #coreVersion?: string;
   readonly #now: () => Date;
   readonly #randomUUID: () => string;
   readonly #browserAvailable: () => boolean;
@@ -1107,6 +1153,8 @@ class ClipperServiceImpl implements CoreService {
   constructor(options: CreateClipperServiceOptions) {
     this.#databaseName = options.databaseName ?? DEFAULT_DATABASE_NAME;
     this.#defaultProfileId = options.defaultProfileId ?? DEFAULT_PROFILE_ID;
+    this.#extensionVersion = options.extensionVersion;
+    this.#coreVersion = options.coreVersion ?? options.extensionVersion;
     this.#now = options.now ?? (() => new Date());
     this.#randomUUID = options.randomUUID ?? defaultRandomUUID;
     this.#browserAvailable = options.browserAvailable ?? (() => true);
@@ -1144,6 +1192,11 @@ class ClipperServiceImpl implements CoreService {
         const parsed = parseMethodParams<{ captureId: string }>(method, params);
         return this.#getCapture(profileId, parsed.captureId);
       }
+      case "capture.getAcquisitionSource":
+        return this.#getAcquisitionSource(
+          profileId,
+          parseMethodParams(method, params),
+        );
       case "job.get": {
         const parsed = parseMethodParams<{ jobId: string }>(method, params);
         return this.#getJob(profileId, parsed.jobId);
@@ -1233,7 +1286,7 @@ class ClipperServiceImpl implements CoreService {
   ): Promise<MutationResult<{ capture: CaptureRecord; job?: JobRecord }>> {
     const database = await this.#databasePromise;
     const transaction = database.transaction(
-      ["captures", "jobs", "executionEvents", "attachments", "settings", "receipts", "meta"],
+      ["captures", "sourceContexts", "jobs", "executionEvents", "attachments", "settings", "receipts", "meta"],
       "readwrite",
     );
     observeTransaction(transaction);
@@ -1281,6 +1334,7 @@ class ClipperServiceImpl implements CoreService {
     }
 
     const captureId = this.#id("cap");
+    const sourceContext = captureSourceContext(params.input.source, captureId, profileId, now);
     const attachmentsToLink: AttachmentRecord[] = [];
     for (const attachmentId of uniqueStrings(params.input.attachmentIds ?? [])) {
       const attachment = await transaction.objectStore("attachments").get(attachmentId);
@@ -1343,6 +1397,9 @@ class ClipperServiceImpl implements CoreService {
     }
 
     await transaction.objectStore("captures").add(capture);
+    if (sourceContext) {
+      await transaction.objectStore("sourceContexts").add(sourceContext);
+    }
     let job: JobRecord | undefined;
     if (initialJobId) {
       job = makePendingJob({
@@ -1762,6 +1819,43 @@ class ClipperServiceImpl implements CoreService {
       results,
       events,
       attachments: attachments.map(withEffectiveAttachmentAvailability),
+    };
+  }
+
+  async #getAcquisitionSource(
+    profileId: string,
+    params: CaptureAcquisitionSourceParams,
+  ): Promise<CaptureAcquisitionSource> {
+    const database = await this.#databasePromise;
+    const [capture, job, context] = await Promise.all([
+      database.get("captures", params.captureId),
+      database.get("jobs", params.jobId),
+      database.get("sourceContexts", params.captureId),
+    ]);
+    invariant(
+      capture?.profileId === profileId,
+      "NOT_FOUND",
+      `Capture ${params.captureId} does not exist in this profile`,
+    );
+    invariant(
+      job?.profileId === profileId && job.captureId === capture.captureId,
+      "NOT_FOUND",
+      `Job ${params.jobId} does not belong to capture ${params.captureId}`,
+    );
+    invariant(job.status === "processing", "NOT_ELIGIBLE", "Only a processing Job can acquire its source");
+    invariant(
+      job.claim?.claimToken === params.claimToken,
+      "CLAIM_TOKEN_INVALID",
+      "The claim token does not own this Job",
+    );
+    return {
+      captureId: capture.captureId,
+      jobId: job.jobId,
+      title: capture.source.title,
+      site: capture.source.site,
+      publicPageUrl: capture.source.pageUrl,
+      ...(context?.pageUrl ? { pageUrl: context.pageUrl } : {}),
+      ...(context?.mediaUrl ? { mediaUrl: context.mediaUrl } : {}),
     };
   }
 
@@ -2458,10 +2552,12 @@ class ClipperServiceImpl implements CoreService {
     return {
       browserAvailable: this.#browserAvailable(),
       databaseAvailable: true,
+      ...(this.#extensionVersion === undefined ? {} : { extensionVersion: this.#extensionVersion }),
+      ...(this.#coreVersion === undefined ? {} : { coreVersion: this.#coreVersion }),
       profileId,
       revision,
       capabilities: {
-        methods: CORE_METHODS,
+        methods: EXTENSION_CAPABILITY_METHODS,
         maxAttachmentChunkBytes: MAX_ATTACHMENT_CHUNK_BYTES,
         fourJobStates: true,
       },
@@ -2476,6 +2572,7 @@ class ClipperServiceImpl implements CoreService {
     const transaction = database.transaction(
       [
         "captures",
+        "sourceContexts",
         "jobs",
         "results",
         "executionEvents",
@@ -2606,6 +2703,7 @@ class ClipperServiceImpl implements CoreService {
     const transaction = database.transaction(
       [
         "captures",
+        "sourceContexts",
         "jobs",
         "results",
         "executionEvents",
@@ -2752,6 +2850,7 @@ class ClipperServiceImpl implements CoreService {
         deletedJobCount += 1;
       }
       await transaction.objectStore("captures").delete(captureId);
+      await transaction.objectStore("sourceContexts").delete(captureId);
     }
     const profileReceipts = (await transaction.objectStore("receipts").getAll()).filter(
       (receipt) => receipt.profileId === profileId,
@@ -3707,7 +3806,9 @@ class ClipperServiceImpl implements CoreService {
       .reduce((sum, item) => sum + item.byteLength, 0);
     return {
       schemaVersion: CORE_SCHEMA_VERSION,
-      databaseVersion: 1,
+      databaseVersion: CORE_DATABASE_VERSION,
+      ...(this.#extensionVersion === undefined ? {} : { extensionVersion: this.#extensionVersion }),
+      ...(this.#coreVersion === undefined ? {} : { coreVersion: this.#coreVersion }),
       profileId,
       databaseName: this.#databaseName,
       revision,

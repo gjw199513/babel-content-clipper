@@ -24,7 +24,7 @@ Capture 封存后保存不变的来源、原文、真实点击、观察事件和
 
 用户点击结束时冻结真实连续段和结束点。现场录制可以继续取得尾部预留；这段时间仍保存播放观察事件和实际覆盖，但不再扩展真实区间，也不会再次叠加预留时长。内容脚本与后台都检查这条边界，避免迟到的进度消息改变结束范围。
 
-一条采集记录独立领取和回写，一条记录可以有视频和音频等多个产物。跨记录拼接由外部 Agent 执行，不属于 Clipper 的采集管理逻辑。ASR、OCR、摘要与内容理解继续属于外部系统。
+一条采集记录独立领取和回写，一条记录可以有视频和音频等多个产物。跨记录拼接、OCR、摘要、ASR 与内容理解都由外部 Agent 执行；源媒体获取由已连接的 Babel 扩展后台/页面上下文完成，不使用浏览器 UI 自动化。Clipper MCP 只校验 claim、转交扩展取源请求、发布结构化指南并交付附件；它不安装依赖、不运行 FFmpeg/sherpa-onnx/LLM，也不让 Agent 直接调用下载器。Agent 按指南把不可变 raw、校正版和审计文件保存在自己的 Job 目录，再通过 MCP 回写引用。
 
 ## 模块
 
@@ -32,8 +32,10 @@ Capture 封存后保存不变的来源、原文、真实点击、观察事件和
 |---|---|
 | `packages/core` | 数据契约、参数校验、IndexedDB、范围规范化与业务事务 |
 | `apps/extension` | 页面采集、侧栏/独立管理页、录制、浏览器事件、Native Host 接线 |
-| `packages/mcp` | 标准 MCP、broker、Native Messaging、安装与诊断、文件交接 |
+| `packages/mcp` | 标准 MCP、broker、Native Messaging、安装与诊断、采集包导出、扩展取源路由与 Agent 指南 |
 | `docs/agent-workflow.md` | Agent 处理规则、执行工具选择和结果验证说明 |
+| `docs/agent-guides/video-text-extraction.md` | 扩展取源、Agent 准备依赖、ASR、校正、本地保存和回写的明确步骤 |
+| `docs/agent-guides/pending-batch-processing.md` | Agent 遍历全部待办分页、冻结授权快照、分波领取并逐项独立回写的明确步骤 |
 | `scripts` | 构建、LSP、打包、测试素材服务 |
 | `tests` | 领域、通信和浏览器验收 |
 

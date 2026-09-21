@@ -18,7 +18,7 @@
 
 Babel Content Clipper는 Chrome 확장 프로그램과 로컬 MCP 구성 요소를 결합한 도구입니다. 웹을 탐색하면서 선택한 텍스트, 이미지, 페이지 영역, 오디오 및 비디오 시간 범위를 명시적으로 저장할 수 있습니다. 그런 다음 사용자의 Agent가 Job을 가져와 파일을 만들고 처리 결과를 다시 기록합니다.
 
-현재 버전은 `0.1.0-alpha.1`이며 버전이 지정된 GitHub Release 첨부 파일과 소스 빌드 및 로컬 로드 방식을 함께 제공합니다. DSH 연계 솔루션의 일부이지만 독립적으로도 사용할 수 있습니다.
+현재 버전은 `0.1.1`이며 버전이 지정된 릴리스 첨부 파일과 소스 빌드 및 로컬 로드 방식을 함께 제공합니다. DSH 연계 솔루션의 일부이지만 독립적으로도 사용할 수 있습니다.
 
 저장소: [GitHub](https://github.com/gjw199513/babel-content-clipper) · 다운로드: [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)
 
@@ -42,7 +42,7 @@ Babel Content Clipper는 Chrome 확장 프로그램과 로컬 MCP 구성 요소�
     → 각 레코드별로 파일을 출력하고 결과를 다시 기록
 ```
 
-확장 프로그램은 소스, 원문 또는 미디어 위치를 저장하고 대기 작업과 기록을 관리합니다. Agent는 소스 가져오기, 자르기, OCR, ASR, 요약 또는 기타 후속 작업을 담당합니다. 목록을 조회하거나 알림을 받는 것만으로는 다운로드나 처리가 자동으로 시작되지 않습니다.
+확장 프로그램은 소스, 원문 또는 미디어 위치를 저장하고 대기 작업과 기록을 관리합니다. 미디어가 필요하면 Agent가 MCP를 통해 연결된 Babel 확장 프로그램에 가져오기를 요청하고 내보낸 뒤, 자신의 도구로 자르기, OCR, ASR, 요약 또는 기타 로컬 후처리를 수행합니다. 목록을 조회하거나 알림을 받는 것만으로는 가져오기나 처리가 자동으로 시작되지 않습니다.
 
 ## 기능과 경계
 
@@ -64,7 +64,7 @@ Babel Content Clipper는 Chrome 확장 프로그램과 로컬 MCP 구성 요소�
 - 출력 디렉터리는 ‘이번 작업에서 지정 → MCP 연결 기본값 → 확장 프로그램 전역 기본값’ 순서로 결정됩니다. 일회성 재정의는 저장된 기본값을 바꾸지 않습니다.
 - 기존 결과와 실패 기록은 나중 처리로 덮어쓰지 않습니다. 성공 후에도 원래 레코드는 자동으로 삭제되지 않습니다.
 
-이 프로젝트에는 ASR, OCR, 요약 서비스, 미디어 다운로더 또는 FFmpeg가 내장되어 있지 않습니다. 사용자가 명시적으로 처리를 요청한 뒤 Agent는 자신의 환경에 이미 있는 도구를 사용할 수 있습니다. 일반 수집에는 FFmpeg가 필요하지 않습니다. 전체 실행 규칙은 [Agent 실행 계약](agent-workflow.md)을 참조하세요.
+이 프로젝트에는 클라우드 ASR, OCR 또는 요약 서비스가 내장되어 있지 않습니다. MCP는 캡처 내보내기, 구조화된 처리 가이드, claim 검증 및 연결된 Babel 확장 프로그램에 대한 가져오기 요청만 제공합니다. Agent는 `babel_clipper_acquire_source_media` 다음에 `babel_clipper_export_capture`를 호출해 확장 프로그램 첨부 파일을 로컬로 내보낸 뒤 FFmpeg, sherpa-onnx, LLM 등 후처리를 수행합니다. Agent 자신의 다운로더, CUA, Playwright, Puppeteer 또는 브라우저 클릭으로 원본 미디어를 가져오면 안 됩니다. 전체 규칙은 [Agent 실행 계약](agent-workflow.md)과[확장 프로그램 가져오기 Spec](../../specs/Babel_Content_Clipper_Browser_Extension_Acquisition_Spec_2026-09-21.md)을 참조하세요.
 
 ## 빠른 시작
 
@@ -196,7 +196,7 @@ Windows, Linux, Firefox, Safari, 원격 Agent 및 모바일 브라우저는 아�
 |---|---|
 | `apps/extension` | Chrome MV3 확장 프로그램, 사이드 패널, 라이브러리, 수집, 실시간 녹화 |
 | `packages/core` | 데이터 계약, IndexedDB, 상태 머신, 시간 범위, 트랜잭션 규칙 |
-| `packages/mcp` | MCP stdio 서비스, Native Messaging, 로컬 broker, 설치, 진단 |
+| `packages/mcp` | MCP stdio, Native Messaging, 로컬 broker, 설치/진단, Capture 내보내기, 소스 전달, Agent 가이드 |
 | `docs` | 설치, 아키텍처, 호환성, Agent 계약, 인수 검증, 제품 사양 |
 | `scripts` | 빌드, 정적 검사, 테스트 픽스처 서비스, 로컬 패키징 |
 | `tests` | Core, MCP, 통합, 브라우저 검증 |
@@ -229,6 +229,7 @@ npm run package:release
 - [설치 및 첫 연결](install.md)
 - [Release 배포 체크리스트](../../release.md) — 중국어 간체
 - [Agent 실행 계약](agent-workflow.md)
+- [비디오 텍스트 추출 Agent 가이드(중국어 간체)](../../agent-guides/video-text-extraction.md)
 - [아키텍처 및 경계](../../architecture.md) — 중국어 간체
 - [호환 범위 및 검증 환경](../../compatibility.md) — 중국어 간체
 - [인수 검증 범위 및 증거](../../acceptance.md) — 중국어 간체

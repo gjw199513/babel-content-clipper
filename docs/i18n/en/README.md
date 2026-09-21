@@ -18,7 +18,7 @@
 
 Babel Content Clipper combines a Chrome extension with a local MCP component. While browsing, you can deliberately save selected text, images, page regions, and audio or video time ranges. Your own Agent can then claim a job, create files, and write the result back.
 
-The current version is `0.1.0-alpha.1`, with versioned GitHub Release assets as well as source-build and local-loading options. It is part of the DSH companion solution, but it can also be used on its own.
+The current version is `0.1.1`, with versioned release assets as well as source-build and local-loading options. It is part of the DSH companion solution, but it can also be used on its own.
 
 Repository: [GitHub](https://github.com/gjw199513/babel-content-clipper) · Downloads: [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)
 
@@ -42,7 +42,7 @@ An explicit selection on a web page
     → separate output files and result writeback for each record
 ```
 
-The extension stores the source, original text or media position, and manages pending work and history. The Agent fetches a source, clips media, runs OCR or ASR, summarizes, or performs other follow-up work. Listing records or receiving a reminder never starts downloading or processing automatically.
+The extension stores the source, original text or media position, and manages pending work and history. When source media is needed, the Agent asks the connected Babel extension to acquire it, exports the local attachment, and then runs FFmpeg, OCR, ASR, summarization, or other follow-up work locally. Listing records or receiving a reminder never starts downloading or processing automatically.
 
 ## Features and boundaries
 
@@ -64,7 +64,7 @@ Core behavior:
 - The output directory is resolved in this order: directory specified for this task → MCP connection default → extension global default. A one-time override does not change saved defaults.
 - Existing results and failure history are not overwritten by later processing, and success does not automatically remove the original record.
 
-The project does not include an ASR service, OCR service, summarizer, media downloader, or FFmpeg. After the user explicitly requests processing, an Agent may use tools already available in its own environment. FFmpeg is not required for ordinary capture. See the complete [Agent execution contract](agent-workflow.md).
+The project does not include cloud ASR, OCR, or summarization services. `babel_clipper_acquire_source_media` asks the connected Babel extension to fetch claim-bound media without browser UI automation; `babel_clipper_export_capture` persists the resulting attachment locally. The Agent supplies FFmpeg, sherpa-onnx, model cache, and LLM for post-processing, keeps raw/corrected/context/audit files separately on disk, and writes their references back through MCP. No step uses CUA, Playwright, Puppeteer, page clicks, or a direct source downloader. See the complete [Agent execution contract](agent-workflow.md).
 
 ## Quick start
 
@@ -176,7 +176,8 @@ The current build requires Chromium `116` or newer. The complete local chain has
 
 Separate public-page samples have validated:
 
-- Bilibili and YouTube: text capture and media time-range recording. The samples did not download source video from either site.
+- Bilibili and YouTube: text capture, media time-range recording, and background source acquisition are validated. The Bilibili sample required the user's explicit local `cookiesFromBrowser: "chrome"` authorization; the public YouTube sample downloaded directly.
+- Xiaohongshu: background acquisition supports the token-bearing page context saved at capture time. An old record containing only a redacted URL and a `blob:` media address must be captured again because its temporary access context cannot be recovered.
 - Zhihu, China University MOOC, and Coursera: public-page text and image capture within configured budgets. Those course-page samples do not establish compatibility with signed-in content or course video.
 
 Windows, Linux, Firefox, Safari, remote Agents, and mobile browsers are not yet listed as validated combinations. Login states, cross-origin iframes, Canvas, restricted media, and custom readers also require site-specific checks. See the continuously updated [compatibility matrix](../../compatibility.md) and [acceptance coverage](../../acceptance.md), currently in Simplified Chinese.
@@ -196,7 +197,7 @@ Windows, Linux, Firefox, Safari, remote Agents, and mobile browsers are not yet 
 |---|---|
 | `apps/extension` | Chrome MV3 extension, side panel, library, capture, and live recording |
 | `packages/core` | Data contracts, IndexedDB, state machine, media ranges, and transaction rules |
-| `packages/mcp` | MCP stdio service, Native Messaging, local broker, installation, and diagnosis |
+| `packages/mcp` | MCP stdio, Native Messaging, local broker, installation/diagnosis, Capture export, source handoff, and Agent guidance |
 | `docs` | Installation, architecture, compatibility, Agent contract, acceptance, and product specification |
 | `scripts` | Build, static checks, test-fixture service, and local packaging |
 | `tests` | Core, MCP, integration, and browser validation |
@@ -229,6 +230,7 @@ npm run package:release
 - [Installation and first connection](install.md)
 - [Release checklist](../../release.md) — Simplified Chinese
 - [Agent execution contract](agent-workflow.md)
+- [Video text extraction Agent guide (Simplified Chinese)](../../agent-guides/video-text-extraction.md)
 - [Architecture and boundaries](../../architecture.md) — Simplified Chinese
 - [Compatibility scope and validation environment](../../compatibility.md) — Simplified Chinese
 - [Acceptance coverage and evidence](../../acceptance.md) — Simplified Chinese

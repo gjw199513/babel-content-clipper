@@ -2,13 +2,13 @@
 
 [简体中文](../../install.md) · [English](../en/install.md) · [繁體中文](install.md) · [日本語](../ja/install.md) · [한국어](../ko/install.md)
 
-本說明使用 `0.1.0-alpha.1` 的命令列介面。實際驗證的系統、瀏覽器及用戶端請參閱[相容矩陣](../../compatibility.md)（簡體中文）；目前為開發候選版本，尚未發布到 npm。
+本說明使用 `0.1.1` 的命令列介面。實際驗證的系統、瀏覽器及用戶端請參閱[相容矩陣](../../compatibility.md)（簡體中文）；這是正式版本，請使用對應的發行附件或從原始碼建置。
 
 ## 1. 下載發行套件或準備原始碼
 
-一般使用者應優先從對應版本的 [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases) 下載 `babel-content-clipper-extension-0.1.0-alpha.1.zip`，並解壓縮到會長期保留的目錄。只使用瀏覽器擷取時，不需要下載原始碼、安裝 Node.js 或自行建置。
+一般使用者應優先從對應版本的 [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases) 下載 `babel-content-clipper-extension-0.1.1.zip`，並解壓縮到會長期保留的目錄。只使用瀏覽器擷取時，不需要下載原始碼、安裝 Node.js 或自行建置。
 
-需要連接本機 MCP 時，再下載同一 Release 中的 `babel-content-clipper-0.1.0-alpha.1.tgz`。本機元件需要 Node.js 22 或更新版本，請確認 `node --version` 能正常執行。瀏覽器擷取本身不依賴 FFmpeg；Agent 需要裁切影音時，再使用其執行環境中既有的媒體工具。
+需要連接本機 MCP 時，再下載同一 Release 中的 `babel-content-clipper-0.1.1.tgz`。本機元件需要 Node.js 22 或更新版本，請確認 `node --version` 能正常執行。Clipper MCP 套件不綁定 Hugging Face、`sherpa-onnx`、FFmpeg、yt-dlp 或模型，也不執行它們。需要媒體時，Agent 以 `babel_clipper_acquire_source_media` 請已連線的 Babel 擴充功能取得，再以 `babel_clipper_export_capture` 將附件匯出到本機；只有需要 ASR 時才由 Agent 讀取 MCP 指南，在自己的執行環境中準備與驗證工具。不得以 CUA、Playwright、Puppeteer、瀏覽器點擊或 Agent 自行下載器替代。
 
 從原始碼目錄建置：
 
@@ -20,7 +20,7 @@ npm run build
 使用 Release 中的 MCP 安裝套件時，請在自己的安裝目錄執行以下命令。請將檔名替換成實際下載的安裝套件路徑。
 
 ```sh
-npm install /absolute/path/babel-content-clipper-0.1.0-alpha.1.tgz
+npm install /absolute/path/babel-content-clipper-0.1.1.tgz
 ```
 
 使用原始碼時，本機元件位於 `dist/node/cli.js`；使用安裝套件時，則位於 `node_modules/babel-content-clipper/dist/node/cli.js`。下文使用原始碼方式的相對路徑；執行命令時請停留在原始碼根目錄。

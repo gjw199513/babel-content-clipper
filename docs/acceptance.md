@@ -62,21 +62,30 @@
 | E-07 | 原生全局侧栏与独立页同步 | 真实侧栏跨网站切换和当前来源更新通过；独立回归确认筛选、选择同步与视图关闭重开恢复。同 profile 浏览器进程重启后记录、completed 历史和 Native 连接恢复；扩展重载会清除已终态 Capture 的残留临时状态及假等待提示 |
 | E-08 | 资源更新和闲置提醒 | 标准 SDK 订阅、本地提醒控制器与真实 chrome.alarms 的重设/自然触发均通过；客户端如何显示通知按各自能力处理 |
 | E-09 | 新用户安装与连接 | 已通过本机干净消费目录：tgz 安装与运行依赖、生成 Native 注册、新 CFT profile 加载包内扩展、设置页连接、真实 B站快捷键采集、包内 CLI 的 SDK 领取/写文件/持久化 ACK、Inspector 独立读回 completed；`v0.1.0-alpha.1` 已发布到 GitHub Releases，远端附件回下载后通过 SHA-256 与 ZIP 完整性校验 |
+| E-10 | Agent 环境的 sherpa-onnx Node-Addon 平台加载 | Agent 侧参考原型在 macOS arm64 / Node.js 22.22.0 上以 `sherpa-onnx-node@1.13.8` 完成 CPU 识别；macOS x64、Windows x64、Linux x64/arm64 未实测。这不是 Clipper MCP 内置运行能力 |
+| E-11 | Agent 模型下载、缓存、镜像与完整性 | Agent 侧参考原型从官方 Hugging Face 固定 revision 真实下载 239,233,841 B INT8 模型，4 个文件大小/SHA-256 全部匹配并复用缓存；hf-mirror 真实传输及错误分类仍待独立 Agent 验证，Clipper 当前只发布规则 |
+| E-12 | Agent FFmpeg 抽音、范围与分段 | Agent 侧参考原型用 FFmpeg 6.0 将指定 5.592 秒范围抽成 16 kHz 单声道 WAV，并生成分块时间映射；无音轨、损坏媒体和长视频专项样本待补。这不是 MCP 执行工具 |
+| E-13 | 简介、标签与评论采集 | 受控浏览器媒体页真实保存 description/keywords/语义 comment，数量和字符预算、去重及不可信数据标记通过；小红书/B站/YouTube 真实评论 DOM 的跨站质量仍待逐站核对 |
+| E-14 | Agent LLM 校正语义保护 | Agent 侧参考样本把原始“开饭时间”依据标题/简介最小校正为“开放时间”，9 点/5 点不变；当前指南明确提示注入、数字、单位、否定、专名和长度检查，但不声称 Clipper 代码替 Agent 强制执行。更多真实样本仍待补 |
+| E-15 | Agent ASR 本地文件与不覆盖 | Agent 侧参考 Job 目录保存 source、audio、raw txt/json、context、manifest、corrected 与 audit；当前 MCP 继续验证回写文件位于已领取输出目录。跨 reprocess Job 与主动清理专项仍待补 |
+| E-16 | 指导型 MCP 与扩展取源边界 | MCP stdio 测试确认处理指南、扩展取源路由和 Capture 导出工具可读；MCP 不直接下载、不准备运行时、不转写、不校正，私有来源 URL 只在 Babel 扩展内部使用；指南单测锁定无 CUA/Playwright/Puppeteer/浏览器点击、模型 revision/哈希、不可信上下文与本地文件契约 |
+| E-17 | 统一处理待办 | 浏览器回归确认资料库一次复制两条真实 pending Job 的固定 ID 快照，排除 completed Job 和不可信正文，复制不领取；MCP 单测与 stdio 测试确认 `pending_batch_processing` 指南要求遍历分页、每波最多 200 项、只处理 accepted 且逐项独立回写 |
 
 ## 证据索引
 
-- 当前源码检查：`artifacts/validation/static-checks.json`，17 个测试文件、76 项核心与集成测试通过；最新类型检查及 71/71 个 TypeScript 文件的真实 LSP 检查通过，零错误、零警告。与浏览器及安装结果分别记录。
+- 当前源码检查：测试数量以最近一次 `npm test` 输出为准；最新类型检查及真实 LSP 检查必须为零错误、零警告。执行型 ASR/下载模块不属于 Clipper MCP；扩展侧取源协议由消息、Native 路由、Core 附件和 MCP stdio 测试覆盖。与浏览器及安装结果分别记录。
+- Agent 侧 ASR 参考证据：`artifacts/validation/asr-runtime/asr/runtime-manifest.json` 记录固定模型 revision、官方端点、文件路径、大小和 SHA-256；`artifacts/validation/asr-runtime/media/runtime-manifest.json` 记录当时验证的 yt-dlp 与 FFmpeg；`artifacts/validation/asr-e2e/captures/cap_smoke/jobs/job_smoke/` 保存源 WAV 及完整 raw/context/corrected/audit 文件树。这些文件证明指南参考路径曾在本机跑通，不表示当前 Clipper MCP 执行它们。
 - 领域逻辑与 IndexedDB 模拟环境：[domain.test.ts](../tests/core/domain.test.ts)、[attachments-backup.test.ts](../tests/core/attachments-backup.test.ts)。
 - 实际 FFmpeg/ffprobe 裁切：[media-processing.test.ts](../tests/integration/media-processing.test.ts)，本机运行事实在 `artifacts/validation/media-processing.json`。
 - 本地安装包消费验证：`npm run verify:install`，本机运行事实在 `artifacts/validation/installation.json`。
 - 干净安装包的真实首次使用：`.hallmark/browser-evidence/e09-installed-bilibili-pending.json` 与 `e09-bilibili-library-pending.png` 记录新 profile 的实际 B站采集；`artifacts/validation/mcp-installed-e09-live.json` 与 `mcp-installed-e09-summary.json` 记录包内 CLI 完成 46 B 原文文件、持久化 ACK 和 Inspector 复读。一次快捷键重试产生的第二条主动采集记录保留，不将其冒充通信重试去重样本。
 - 一次性提醒控制器：[reminders.test.ts](../tests/integration/reminders.test.ts)，涵盖重置、迟到、重启、关闭与无客户端降级。
-- 浏览器自动化完整套：`.hallmark/browser-evidence/library-browser-suite-summary.json` 与 `library-browser-suite.log`，10/10 项通过，耗时 33.7 秒。该次运行早于最后的尾段边界修复，修复后的受影响用例另行重跑。测试包括 capture 3 项、smoke 5 项和 library 2 项，全部静音，独立 profile 已关闭。runtime action 与侧栏按钮路径不替代原生菜单/系统快捷键证据；headless 明确 unavailable 也不作为真实现场录制成功证明。
+- 浏览器自动化完整套最新运行 20/20 项通过，耗时约 2.9 分钟；包含 capture、smoke、i18n、library、organization、reader boundaries 与布局，全部使用隔离 profile。其中文本/图片/媒体、五语言、备份、收藏、清理、真实 alarms 和重启边界均通过；headless 明确 unavailable 仍不作为真实现场录制成功证明。
 - 尾段冻结修复后的受影响浏览器回归：`.hallmark/browser-evidence/latest-capture-regression-summary.json` 与同名日志，3/3 项通过，16.0 秒，覆盖媒体范围与严格 0 B 失败路径。该回归仍不替代真实现场录制的尾段成功证据。
 - 最新采集回归：[capture-regression.spec.ts](../tests/browser/capture-regression.spec.ts)，3/3 项通过，17.3 秒，覆盖实际图文/PNG 字节、媒体范围、具体录制失败诊断和单次开关。headless 失败分支不作为现场录制成功证明。
 - 收藏、复制、来源清理和自然提醒：[organization.spec.ts](../tests/browser/organization.spec.ts)，证据为 `.hallmark/browser-evidence/organization-{favorites-copy,source-cleanup,alarms}.json` 及截图。复制检查捕获真实按钮调用 writeText 的内容；headless 未授权读取系统剪贴板，因此不声称系统剪贴板往返通过。清理数据由受信 Core RPC 建立受控状态；自然提醒使用真实 chrome.alarms。
 - 阅读器与采集边界：[reader-boundaries.spec.ts](../tests/browser/reader-boundaries.spec.ts)，证据为 `reader-selection-focus-and-chapter.json`、`reader-boundaries-canvas-images.json`、`reader-boundaries-restricted.json` 及截图，均位于 `.hallmark/browser-evidence/`。组织与阅读器两组共 6/6 项通过，约 2.3 分钟，包含真实提醒等待。
-- 真实公开平台回归：[platform-smoke.spec.ts](../tests/browser/platform-smoke.spec.ts)，最新强化检查 3/3 项通过，20.1 秒：知乎/MOOC/Coursera 分别保存 5,228/4,865/5,756 字符，与当时实际选区逐字一致，URL、SHA-256 和详情回显均核对。前两轮证据没有逐字比较，保留为 pre-hardening 历史而不代替本轮。图片数量超限按 partial 与缺失元数据展示；三页未观察到媒体元素，不宣称课程视频适配。
+- 真实公开平台回归：[platform-smoke.spec.ts](../tests/browser/platform-smoke.spec.ts)，本次构建 3/3 项通过，14.3 秒：知乎/MOOC/Coursera 的实时公开选区、URL、SHA-256 和详情回显均核对。图片数量超限仍按 partial 与缺失元数据展示；三页未观察到媒体元素，不宣称课程视频适配。
 - 真实平台媒体标记：`.hallmark/browser-evidence/e09-bilibili-media-close.json` 与 `e09-youtube-text-media-close.json`，两站均通过系统快捷键开始、静音播放、跳转、暂停与结束，真实区间保留缺口，关源页后仍可读回。YouTube 另有可见标题选文。该项没有执行两站媒体下载，不冒充已取得文件。
 - 粘贴、共享视图和备份：`.hallmark/browser-evidence/library-regression-summary.json`；粘贴完整原文、未知来源、重复提交一次、URL 校验，筛选/选中同步和关闭重开、UI 导出后在独立 profile UI 导入均通过。该次备份仅元数据，没有据此声称附件迁移通过。
 - 真实清理界面：`.hallmark/browser-evidence/library-cleanup-summary.json`，区分 UI 动作与为测试预置的工作项。

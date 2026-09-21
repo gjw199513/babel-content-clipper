@@ -25,6 +25,7 @@ import {
 import { redactUrl } from "./security.js";
 import { EXTENSION_CHANNEL } from "./messages.js";
 import { installClipboardImport } from "./clipboard-import.js";
+import { collectPendingBatch, type PendingBatchItem } from "./pending-batch.js";
 import {
   DEFAULT_VIEW_STATE,
   LIBRARY_REVISION_KEY,
@@ -64,6 +65,8 @@ const dateFilter = $("#date-filter") as HTMLSelectElement;
 const includeFailedCleanup = $("#include-failed-cleanup") as HTMLInputElement;
 const includeAttachments = $("#include-attachments") as HTMLInputElement;
 const importFile = $("#import-file") as HTMLInputElement;
+const copyPendingBatchButton = $("#copy-pending-batch") as HTMLButtonElement;
+const connectionBanner = $("#connection-banner") as HTMLElement;
 
 let state: LibraryViewState = DEFAULT_VIEW_STATE;
 let records: CaptureListItem[] = [];
@@ -291,6 +294,49 @@ function setSettingsView(enabled: boolean): void {
   document.body.classList.toggle("settings-view", enabled);
 }
 
+function openSettingsView(): void {
+  history.replaceState(null, "", `${location.pathname}#settings`);
+  void renderSettings();
+}
+
+function renderConnectionBanner(connection: UiConnectionStatus | undefined, error?: unknown): void {
+  clear(connectionBanner);
+  const disconnected = !connection?.native.connected;
+  connectionBanner.hidden = !disconnected;
+  if (!disconnected) return;
+
+  const heading = document.createElement("strong");
+  bindTranslation(heading, "Agent 暂时无法读取或回写记录");
+  const message = translatedParagraph(
+    "",
+    error
+      ? "连接状态暂时不可用；请点击“打开连接设置”，在连接设置页点击“重连本地服务”，看到“本地桥已连接”后，再让 Agent 刷新 MCP。"
+      : "请按这个顺序操作：先点击“打开连接设置”，进入页面后点击“重连本地服务”；看到“本地桥已连接”后，再让 Agent 刷新 MCP。",
+  );
+  const actions = document.createElement("div");
+  actions.className = "connection-banner-actions";
+  actions.append(
+    makeButton("打开连接设置", openSettingsView, "accent"),
+    makeButton("重新检查连接", () => void refreshConnectionBanner(), "quiet"),
+  );
+  connectionBanner.className = "connection-banner";
+  connectionBanner.append(
+    translatedParagraph("eyebrow", "MCP 连接未完成"),
+    heading,
+    message,
+    ...(error ? [localizedMessageParagraph("failure-card", errorMessage(error, "连接状态不可用。"))] : []),
+    actions,
+  );
+}
+
+async function refreshConnectionBanner(): Promise<void> {
+  try {
+    renderConnectionBanner(await callCore("connection.status"));
+  } catch (error) {
+    renderConnectionBanner(undefined, error);
+  }
+}
+
 function renderEmptyDetail(message = "详情会显示完整原文、来源定位、范围快照、处理历史与附件事实。"): void {
   setSettingsView(false);
   activeDetail = "empty";
@@ -323,6 +369,17 @@ function listParams(cursor?: string): Record<string, unknown> {
     ...(createdFrom ? { createdFrom } : {}),
     ...(cursor ? { cursor } : {}),
     limit: PAGE_SIZE,
+  };
+}
+
+function pendingBatchListParams(snapshot: LibraryViewState, cursor?: string): Record<string, unknown> {
+  const createdFrom = createdFromFor(snapshot.date);
+  return {
+    view: "pending",
+    ...(snapshot.sourceKey ? { sourceKey: snapshot.sourceKey } : {}),
+    ...(createdFrom ? { createdFrom } : {}),
+    ...(cursor ? { cursor } : {}),
+    limit: 200,
   };
 }
 
@@ -795,6 +852,22 @@ function taskDescription(data: CaptureDetailResult): string {
   ].join("\n");
 }
 
+function batchTaskDescription(items: readonly PendingBatchItem[]): string {
+  const identifiers = items.map((item) => `- captureId=${item.captureId}; jobId=${item.jobId}`).join("\n");
+  return [
+    t("请统一处理 Babel Content Clipper 当前批次，共 {count} 个待处理工作项。", {
+      count: numberText(items.length),
+    }),
+    t("这是明确执行授权，仅限下列 Capture/Job 快照；无需逐条再次向我确认，也不要自动纳入本次复制后新增的记录。"),
+    t("请先读取 pending_batch_processing 处理指南，逐页核对记录；使用 babel_clipper_claim_records 分批原子领取（每次最多 200 个 jobId），只处理 accepted 项。"),
+    t("每条记录独立读取、输出、验证和回写；一条失败不得撤销其他成功项。不得覆盖历史、自动重处理失败项或自动清理记录。"),
+    t("每条任务按其实际输出要求处理；需要视频文字且已有文字不足时，再读取 video_text_extraction 指南。所有后处理由 Agent 使用自己的工具完成，不操作浏览器页面。"),
+    t("如某项已被领取或不再符合条件，请跳过并在批次汇总中如实报告。"),
+    t("批次项目："),
+    identifiers,
+  ].join("\n");
+}
+
 function renderCaptureDetail(data: CaptureDetailResult): void {
   setSettingsView(false);
   activeDetail = "capture";
@@ -833,7 +906,9 @@ function renderCaptureDetail(data: CaptureDetailResult): void {
   const saveLabel = capture.collection === "saved" ? "重新加入待办" : "设为仅收藏";
   actions.append(makeButton(saveLabel, () => void setCollection(data)));
   actions.append(makeButton("复制任务说明", () => void copyTask(data), "quiet"));
-  actions.append(makeButton("重新处理", () => void reprocessCapture(data), "accent"));
+  if (latestJob?.status === "completed" || latestJob?.status === "failed") {
+    actions.append(makeButton("重新处理", () => void reprocessCapture(data), "accent"));
+  }
   actions.append(makeButton("清理这条", () => void cleanupCapture(data), "danger"));
   actions.append(makeButton("清理同来源已处理", () => void cleanupSource(data), "danger"));
   detail.append(actions);
@@ -952,6 +1027,35 @@ async function copyTask(data: CaptureDetailResult): Promise<void> {
     notify(t("任务说明已复制。只有明确交给 Agent 后才会开始处理。"));
   } catch (error) {
     notify(errorMessage(error, "复制失败，请重试。"));
+  }
+}
+
+async function pendingBatchSnapshot(): Promise<PendingBatchItem[]> {
+  const snapshot = state;
+  const query = snapshot.search.trim().toLocaleLowerCase(getLocale());
+  return collectPendingBatch(
+    (cursor) => callCore("capture.list", pendingBatchListParams(snapshot, cursor)),
+    (record) => !query
+      || `${record.title} ${record.site} ${record.preview}`.toLocaleLowerCase(getLocale()).includes(query),
+  );
+}
+
+async function copyPendingBatch(): Promise<void> {
+  setBusy(copyPendingBatchButton, true);
+  try {
+    const items = await pendingBatchSnapshot();
+    if (items.length === 0) {
+      notify(t("当前筛选范围没有可统一处理的待办。"));
+      return;
+    }
+    await navigator.clipboard.writeText(batchTaskDescription(items));
+    notify(t("已复制 {count} 条待办的统一处理说明；粘贴给已连接的 Agent 即可一次执行。", {
+      count: numberText(items.length),
+    }));
+  } catch (error) {
+    notify(errorMessage(error, "统一处理说明生成失败。"));
+  } finally {
+    setBusy(copyPendingBatchButton, false);
   }
 }
 
@@ -1122,16 +1226,29 @@ async function importBackup(file: File): Promise<void> {
 }
 
 async function appendConnectionControls(): Promise<void> {
+  detail.querySelector(".connection-card")?.remove();
   let connection: UiConnectionStatus;
   try {
     connection = await callCore("connection.status");
   } catch (error) {
-    detail.append(localizedMessageParagraph("failure-card", errorMessage(error, "连接状态不可用。")));
+    const section = document.createElement("section");
+    section.className = "connection-card is-disconnected";
+    section.append(
+      translatedParagraph("eyebrow", "MCP 连接"),
+      bindTranslation(document.createElement("h3"), "无法读取连接状态"),
+      translatedParagraph("", "请点击“重新检查连接”。如果仍然失败，请先确认本地服务正在运行，再重新加载扩展。"),
+      localizedMessageParagraph("failure-card", errorMessage(error, "连接状态不可用。")),
+      makeButton("重新检查连接", () => void appendConnectionControls(), "accent"),
+    );
+    detail.append(section);
     return;
   }
   const section = document.createElement("section");
-  section.className = "connection-card";
-  section.append(translatedParagraph("eyebrow", "浏览器连接标识"));
+  section.className = `connection-card${connection.native.connected ? "" : " is-disconnected"}`;
+  section.append(
+    translatedParagraph("eyebrow", "MCP 连接"),
+    bindTranslation(document.createElement("h3"), "连接本地 Agent"),
+  );
   const idLine = document.createElement("div");
   idLine.className = "connection-id";
   const id = document.createElement("code");
@@ -1142,11 +1259,18 @@ async function appendConnectionControls(): Promise<void> {
       () => notify(t("复制失败，请手动选择。")),
     );
   }));
+  const instructions = translatedParagraph(
+    "",
+    connection.native.connected
+      ? "已连接。Agent 可以读取和回写记录；如果 Agent 仍提示无法连接，请让它刷新 MCP 连接。"
+      : "如果 Agent 提示无法连接，请先确认它使用了上面的 profileId，然后点击“立即重连本地服务”；看到“本地桥已连接”后，再让 Agent 刷新 MCP。",
+  );
   const status = translatedParagraph(
     "connection-state",
     connection.native.connected ? "本地桥已连接" : "本地记录可用 · 本地桥未连接",
   );
-  const reconnect = makeButton("重连本地服务", () => {
+  let failure: HTMLElement | undefined;
+  const reconnect = makeButton(connection.native.connected ? "重新连接本地服务" : "立即重连本地服务", () => {
     setBusy(reconnect, true);
     void sendRuntime<{ ok: boolean; error?: { message?: string } }>({
       channel: EXTENSION_CHANNEL,
@@ -1154,12 +1278,37 @@ async function appendConnectionControls(): Promise<void> {
       action: "connect-native",
     }).then((response) => {
       if (!response.ok) throw new Error(response.error?.message ?? t("本地桥连接失败。"));
+      return callCore("connection.status");
+    }).then((nextConnection) => {
+      if (!nextConnection.native.connected) throw new Error(t("重连后本地桥仍未连接。"));
+      section.classList.remove("is-disconnected");
+      bindTranslation(instructions, "已连接。Agent 可以读取和回写记录；如果 Agent 仍提示无法连接，请让它刷新 MCP 连接。");
       bindTranslation(status, "本地桥已连接");
+      status.classList.remove("is-disconnected");
+      status.classList.add("is-connected");
+      bindTranslation(reconnect, "重新连接本地服务");
       notify(t("本地桥已连接。"));
-    }).catch((error: unknown) => notify(errorMessage(error, "本地桥连接失败。")))
+    }).catch((error: unknown) => {
+      failure?.remove();
+      failure = document.createElement("div");
+      failure.className = "failure-card";
+      failure.append(
+        localizedMessageParagraph("", errorMessage(error, "本地桥连接失败。")),
+        translatedParagraph("", "没有连上时，请先确认 Agent 的 MCP 配置使用了这里的 profileId，然后点击“重连本地服务”；如果仍失败，请重新加载扩展后再试。"),
+      );
+      section.append(failure);
+      notify(errorMessage(error, "本地桥连接失败。"));
+    })
       .finally(() => setBusy(reconnect, false));
-  }, "quiet");
-  section.append(idLine, status, reconnect);
+  }, connection.native.connected ? "quiet" : "accent");
+  status.classList.add(connection.native.connected ? "is-connected" : "is-disconnected");
+  section.append(
+    instructions,
+    translatedParagraph("eyebrow", "浏览器连接标识"),
+    idLine,
+    status,
+    reconnect,
+  );
   detail.append(section);
 }
 
@@ -1204,6 +1353,7 @@ async function renderSettings(): Promise<void> {
         activeDetail = "capture";
         void loadDetail(state.selectedCaptureId, loadGeneration);
       } else renderEmptyDetail();
+      void refreshConnectionBanner();
     }, "quiet");
     heading.append(headingCopy, back);
     detail.append(heading);
@@ -1348,6 +1498,7 @@ function handleLocaleChange(): void {
   ) {
     renderCaptureDetail(currentDetailData);
   }
+  void refreshConnectionBanner();
 }
 
 function applyStateToControls(): void {
@@ -1392,6 +1543,7 @@ $("#clear-filters").addEventListener("click", () => {
   applyStateToControls();
   void persistState(true);
 });
+copyPendingBatchButton.addEventListener("click", () => void copyPendingBatch());
 $("#export").addEventListener("click", () => void exportBackup());
 $("#import").addEventListener("click", () => importFile.click());
 importFile.addEventListener("change", () => {
@@ -1399,8 +1551,7 @@ importFile.addEventListener("change", () => {
   if (file) void importBackup(file);
 });
 $("#settings").addEventListener("click", () => {
-  history.replaceState(null, "", `${location.pathname}#settings`);
-  void renderSettings();
+  openSettingsView();
 });
 $("#help").addEventListener("click", () => {
   chrome.tabs.create({ url: chrome.runtime.getURL("help.html") }, () => {
@@ -1445,4 +1596,5 @@ void (async () => {
   if (location.hash === "#settings") void renderSettings();
   else if (!state.selectedCaptureId) renderEmptyDetail();
   await loadPage(true);
+  await refreshConnectionBanner();
 })();

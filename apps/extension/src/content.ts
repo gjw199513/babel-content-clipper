@@ -3,6 +3,7 @@ import { redactUrl, truncateText } from "./security.js";
 import { sanitizeHtml } from "./dom-safety.js";
 import { observeMediaProgress } from "./media-segments.js";
 import { MAX_SELECTION_IMAGE_REFERENCES } from "./selection-images.js";
+import { collectPageContentContext, type PageContentContext } from "./page-context.js";
 
 const SNAPSHOT_TTL_MS = 15_000;
 const MEDIA_SAMPLE_MS = 250;
@@ -10,6 +11,7 @@ const MAX_EVENTS = 2_000;
 const MAX_SEGMENTS = 1_000;
 const MAX_SELECTION_TEXT = 10_000_000;
 const MAX_SELECTION_HTML = 500_000;
+const SOURCE_STREAM_CHUNK_BYTES = 256 * 1024;
 const documentInstanceId = crypto.randomUUID();
 
 interface SelectionSnapshot {
@@ -34,6 +36,8 @@ interface MediaTarget {
   element: HTMLMediaElement;
   targetId: string;
   source: string;
+  /** The unredacted URL is used only by the extension acquisition path. */
+  acquisitionSource: string;
   duration: number | null;
 }
 
@@ -70,6 +74,94 @@ function reply(requestId: string, ok: boolean, payload?: unknown, error?: { code
   void chrome.runtime.sendMessage({ channel: EXTENSION_CHANNEL, type: "content_reply", requestId, ok, ...(payload === undefined ? {} : { payload }), ...(error ? { error } : {}) });
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const step = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += step) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + step, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+async function sendSourceStreamMessage(message: Record<string, unknown>): Promise<void> {
+  const response = await chrome.runtime.sendMessage({ channel: EXTENSION_CHANNEL, ...message }) as { ok?: boolean; error?: { code?: string; message?: string } } | undefined;
+  if (response?.ok === false) {
+    throw new Error(response.error?.message ?? "扩展后台拒绝了媒体分块。");
+  }
+}
+
+function sourceStreamFailure(error: unknown): { code: string; message: string } {
+  const message = error instanceof Error ? error.message : "";
+  if (message.startsWith("SOURCE_MEDIA_URL_UNAVAILABLE")) {
+    return { code: "SOURCE_MEDIA_URL_UNAVAILABLE", message: "当前页面没有可获取的媒体地址。" };
+  }
+  if (message.startsWith("SOURCE_NOT_MEDIA")) {
+    return { code: "SOURCE_NOT_MEDIA", message: "页面上下文返回的不是媒体文件。" };
+  }
+  const status = /^SOURCE_FETCH_FAILED:\s*页面上下文返回 HTTP (\d{3})/u.exec(message)?.[1];
+  return {
+    code: "SOURCE_FETCH_FAILED",
+    message: status ? `页面上下文取源返回 HTTP ${status}。` : "页面上下文无法获取媒体。",
+  };
+}
+
+async function streamAcquisitionSource(requestId: string, requestedUrl?: string): Promise<void> {
+  try {
+    const target = requestedUrl ? undefined : targetFor();
+    const source = requestedUrl || target?.acquisitionSource;
+    if (!source) throw new Error("SOURCE_MEDIA_URL_UNAVAILABLE: 当前页面没有可获取的媒体地址。");
+    const response = await fetch(source, { credentials: "include", redirect: "follow" });
+    if (!response.ok) throw new Error(`SOURCE_FETCH_FAILED: 页面上下文返回 HTTP ${response.status}。`);
+    const mimeType = (response.headers.get("content-type")?.split(";", 1)[0] || "application/octet-stream").trim().toLowerCase();
+    if (mimeType === "text/html" || mimeType === "application/xhtml+xml" || mimeType === "application/json") {
+      throw new Error("SOURCE_NOT_MEDIA: 页面上下文返回的不是媒体文件。");
+    }
+    const contentLength = Number(response.headers.get("content-length"));
+    await sendSourceStreamMessage({
+      type: "source_stream_start",
+      requestId,
+      mimeType,
+      ...(Number.isSafeInteger(contentLength) && contentLength >= 0 ? { totalBytes: contentLength } : {}),
+    });
+
+    let offset = 0;
+    const append = async (bytes: Uint8Array): Promise<void> => {
+      for (let start = 0; start < bytes.byteLength; start += SOURCE_STREAM_CHUNK_BYTES) {
+        const chunk = bytes.slice(start, Math.min(start + SOURCE_STREAM_CHUNK_BYTES, bytes.byteLength));
+        await sendSourceStreamMessage({
+          type: "source_stream_chunk",
+          requestId,
+          offset,
+          dataBase64: bytesToBase64(chunk),
+        });
+        offset += chunk.byteLength;
+      }
+    };
+    if (response.body) {
+      const reader = response.body.getReader();
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        if (next.value?.byteLength) await append(next.value);
+      }
+    } else {
+      await append(new Uint8Array(await response.arrayBuffer()));
+    }
+    await sendSourceStreamMessage({ type: "source_stream_complete", requestId, totalBytes: offset });
+  } catch (error) {
+    const safe = sourceStreamFailure(error);
+    await chrome.runtime.sendMessage({
+      channel: EXTENSION_CHANNEL,
+      type: "source_stream_error",
+      requestId,
+      error: {
+        code: safe.code,
+        message: safe.message,
+      },
+    }).catch(() => undefined);
+  }
+}
+
 function isEditable(element: Element | null): boolean {
   if (!element) return false;
   return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement
@@ -93,15 +185,22 @@ function selectionAround(text: string): { prefix: string; suffix: string } {
 function pageSource(): {
   url: string;
   canonicalUrl?: string;
+  acquisitionUrl?: string;
   title: string;
   documentInstanceId: string;
+  metadata?: { contentContext: PageContentContext };
 } {
   const canonical = document.querySelector<HTMLLinkElement>('link[rel~="canonical"]')?.href;
+  const contentContext = collectPageContentContext(document, location.hostname);
   return {
     url: redactUrl(location.href),
     ...(canonical ? { canonicalUrl: redactUrl(canonical) } : {}),
+    // Core stores this in its private, claim-bound acquisition context. It is
+    // never returned as part of the public Capture record or backup export.
+    acquisitionUrl: location.href,
     title: document.title,
     documentInstanceId,
+    ...(contentContext === undefined ? {} : { metadata: { contentContext } }),
   };
 }
 
@@ -183,8 +282,13 @@ function validSnapshot(snapshot: SelectionSnapshot | undefined): snapshot is Sel
 document.addEventListener("selectionchange", () => { void readSelection(); }, { passive: true });
 
 function sourceUrl(element: HTMLMediaElement): string {
+  return redactUrl(rawSourceUrl(element));
+}
+
+function rawSourceUrl(element: HTMLMediaElement): string {
   const source = element.currentSrc || element.src || element.querySelector("source")?.getAttribute("src") || location.href;
-  return redactUrl(source);
+  try { return new URL(source, location.href).href; }
+  catch { return location.href; }
 }
 
 function targetFor(requestedType?: "video" | "audio"): MediaTarget | undefined {
@@ -200,7 +304,13 @@ function targetFor(requestedType?: "video" | "audio"): MediaTarget | undefined {
   const element = fullscreen ?? playing ?? visible ?? candidates[0];
   if (!element) return undefined;
   const index = candidates.indexOf(element);
-  return { element, targetId: `${element.tagName.toLowerCase()}-${index}`, source: sourceUrl(element), duration: Number.isFinite(element.duration) ? element.duration : null };
+  return {
+    element,
+    targetId: `${element.tagName.toLowerCase()}-${index}`,
+    source: sourceUrl(element),
+    acquisitionSource: rawSourceUrl(element),
+    duration: Number.isFinite(element.duration) ? element.duration : null,
+  };
 }
 
 function addMediaEvent(type: string, detail?: string): void {
@@ -281,7 +391,7 @@ function closeMediaSegmentAtBoundary(element: HTMLMediaElement): void {
   mediaCapture.lastSampleWall = wallNow;
 }
 
-function startMedia(target: MediaTarget): { startedAt: string; originalStart: number; targetId: string; source: string; duration: number | null } {
+function startMedia(target: MediaTarget): { startedAt: string; originalStart: number; targetId: string; source: string; acquisitionSource: string; duration: number | null } {
   const startedAt = new Date().toISOString();
   const element = target.element;
   const initialEvent: MediaEvent = {
@@ -317,7 +427,14 @@ function startMedia(target: MediaTarget): { startedAt: string; originalStart: nu
     mediaCapture.listeners.push(() => element.removeEventListener(eventName, listener));
   }
   mediaCapture.timer = window.setInterval(sampleMedia, MEDIA_SAMPLE_MS);
-  return { startedAt, originalStart: element.currentTime, targetId: target.targetId, source: target.source, duration: target.duration };
+  return {
+    startedAt,
+    originalStart: element.currentTime,
+    targetId: target.targetId,
+    source: target.source,
+    acquisitionSource: target.acquisitionSource,
+    duration: target.duration,
+  };
 }
 
 function markMediaEnd(): { endedAt: string; originalEnd: number | null; events: MediaEvent[]; segments: MediaSegment[]; duration: number | null } | undefined {
@@ -424,6 +541,11 @@ async function handle(message: ContentCommandMessage, sender: chrome.runtime.Mes
   if (!sender.id || sender.id !== chrome.runtime.id) return;
   const requestId = message.requestId ?? crypto.randomUUID();
   try {
+    if (message.command === "acquire_media") {
+      reply(requestId, true, { streaming: true });
+      void streamAcquisitionSource(requestId, message.context?.sourceUrl);
+      return;
+    }
     if (message.command === "capture_selection") {
       const fresh = readSelection();
       const snapshot = fresh ?? (validSnapshot(latestSelection) ? latestSelection : undefined);
@@ -446,12 +568,12 @@ async function handle(message: ContentCommandMessage, sender: chrome.runtime.Mes
     if (message.context?.phase === "mark_end") {
       const completion = markMediaEnd();
       if (!completion) return reply(requestId, false, undefined, { code: "MEDIA_NOT_OPEN", message: "当前标签页没有正在记录的片段。" });
-      return reply(requestId, true, { kind: "media", source: pageSource(), target: { targetId: target.targetId, source: target.source, duration: target.duration }, completion, status: mediaStatus() });
+      return reply(requestId, true, { kind: "media", source: pageSource(), target: { targetId: target.targetId, source: target.source, acquisitionSource: target.acquisitionSource, duration: target.duration }, completion, status: mediaStatus() });
     }
     if (message.context?.phase === "stop") {
       const completion = stopMedia(false);
       if (!completion) return reply(requestId, false, undefined, { code: "MEDIA_NOT_OPEN", message: "当前标签页没有正在记录的片段。" });
-      return reply(requestId, true, { kind: "media", source: pageSource(), target: { targetId: target.targetId, source: target.source, duration: target.duration }, completion });
+      return reply(requestId, true, { kind: "media", source: pageSource(), target: { targetId: target.targetId, source: target.source, acquisitionSource: target.acquisitionSource, duration: target.duration }, completion });
     }
     if (mediaCapture) return reply(requestId, false, undefined, { code: "MEDIA_ALREADY_OPEN", message: "当前页面已有正在记录的片段。" });
     const started = startMedia(target);

@@ -2,13 +2,13 @@
 
 [简体中文](../../install.md) · [English](../en/install.md) · [繁體中文](../zh-TW/install.md) · [日本語](../ja/install.md) · [한국어](install.md)
 
-이 문서는 `0.1.0-alpha.1` 명령줄 인터페이스를 사용합니다. 실제로 검증된 운영체제, 브라우저 및 클라이언트는 [호환성 매트릭스](../../compatibility.md)(중국어 간체)를 참조하세요. 현재 버전은 개발 후보이며 npm에 게시되지 않았습니다.
+이 문서는 `0.1.1` 명령줄 인터페이스를 사용합니다. 실제로 검증된 운영체제, 브라우저 및 클라이언트는 [호환성 매트릭스](../../compatibility.md)(중국어 간체)를 참조하세요. 정식 릴리스이며 해당 릴리스 첨부 파일 또는 소스에서 사용할 수 있습니다.
 
 ## 1. 릴리스 패키지 다운로드 또는 소스 준비
 
-일반 사용자는 해당 버전의 [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)에서 `babel-content-clipper-extension-0.1.0-alpha.1.zip`을 다운로드해 계속 유지할 디렉터리에 압축 해제하세요. 브라우저 수집만 사용할 때는 소스 코드, Node.js, 로컬 빌드가 필요하지 않습니다.
+일반 사용자는 해당 버전의 [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)에서 `babel-content-clipper-extension-0.1.1.zip`을 다운로드해 계속 유지할 디렉터리에 압축 해제하세요. 브라우저 수집만 사용할 때는 소스 코드, Node.js, 로컬 빌드가 필요하지 않습니다.
 
-로컬 MCP를 연결하려면 같은 Release에서 `babel-content-clipper-0.1.0-alpha.1.tgz`도 다운로드하세요. 로컬 구성 요소에는 Node.js 22 이상이 필요합니다. `node --version`이 정상적으로 실행되는지 확인하세요. 브라우저 수집 자체는 FFmpeg에 의존하지 않습니다. Agent가 오디오나 비디오를 잘라야 할 때는 실행 환경에 이미 있는 미디어 도구를 사용합니다.
+로컬 MCP를 연결하려면 같은 Release에서 `babel-content-clipper-0.1.1.tgz`도 다운로드하세요. 로컬 구성 요소에는 Node.js 22 이상이 필요합니다. `node --version`이 정상적으로 실행되는지 확인하세요. Clipper MCP 패키지는 Hugging Face, `sherpa-onnx`, FFmpeg, yt-dlp 또는 모델을 포함하거나 실행하지 않습니다. 미디어가 필요하면 Agent가 `babel_clipper_acquire_source_media`로 연결된 Babel 확장 프로그램에 가져오기를 요청하고 `babel_clipper_export_capture`로 첨부 파일을 로컬에 내보냅니다. ASR가 필요할 때만 Agent가 MCP 가이드를 읽고 자신의 실행 환경에서 필요한 도구를 준비하고 검증합니다. CUA, Playwright, Puppeteer, 브라우저 클릭 또는 Agent 자체 다운로더로 대체하지 않습니다.
 
 소스 디렉터리에서 빌드합니다.
 
@@ -20,7 +20,7 @@ npm run build
 Release의 MCP 패키지를 설치하려면 자신의 설치 디렉터리에서 다음 명령을 실행하세요. 파일명은 실제로 받은 설치 패키지 경로로 바꾸세요.
 
 ```sh
-npm install /absolute/path/babel-content-clipper-0.1.0-alpha.1.tgz
+npm install /absolute/path/babel-content-clipper-0.1.1.tgz
 ```
 
 소스 방식의 로컬 구성 요소는 `dist/node/cli.js`에 있고, 패키지 설치 방식은 `node_modules/babel-content-clipper/dist/node/cli.js`에 있습니다. 아래에서는 소스 방식의 상대 경로를 사용하므로 소스 루트에서 명령을 실행하세요.

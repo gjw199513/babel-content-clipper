@@ -18,7 +18,7 @@
 
 Babel Content Clipper は、Chrome 拡張機能とローカル MCP コンポーネントを組み合わせたツールです。Web の閲覧中に、選択したテキスト、画像、ページ領域、音声・動画の時間範囲を明示的に保存できます。その後、自分の Agent が Job を取得し、ファイルを生成して処理結果を書き戻します。
 
-現在のバージョンは `0.1.0-alpha.1` で、バージョン付き GitHub Release 添付ファイルに加え、ソースからのビルドとローカル読み込みも利用できます。DSH 連携ソリューションの一部ですが、単独でも利用できます。
+現在のバージョンは `0.1.1` で、バージョン付きリリース添付ファイルに加え、ソースからのビルドとローカル読み込みも利用できます。DSH 連携ソリューションの一部ですが、単独でも利用できます。
 
 リポジトリ：[GitHub](https://github.com/gjw199513/babel-content-clipper) · ダウンロード：[GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)
 
@@ -42,7 +42,7 @@ Web ページで明示的に選択
     → レコードごとに個別ファイルを出力し、結果を書き戻す
 ```
 
-拡張機能はソース、原文またはメディア位置を保存し、保留中の作業と履歴を管理します。Agent はソース取得、切り出し、OCR、ASR、要約などの後処理を担当します。リストを照会したり通知を受け取ったりするだけでは、ダウンロードや処理は自動的に始まりません。
+拡張機能はソース、原文またはメディア位置を保存し、保留中の作業と履歴を管理します。メディアが必要な場合、Agent は MCP 経由で接続中の Babel 拡張機能に取得を依頼し、書き出した後に自分のツールで切り出し、OCR、ASR、要約などの後処理を行います。リストを照会したり通知を受け取ったりするだけでは、取得や処理は自動的に始まりません。
 
 ## 機能と境界
 
@@ -64,7 +64,7 @@ Web ページで明示的に選択
 - 出力ディレクトリは「今回のタスクで指定 → MCP 接続の既定値 → 拡張機能のグローバル既定値」の順に解決されます。今回だけの上書きで、保存済みの既定値は変更されません。
 - 既存の結果や失敗履歴は後続の処理で上書きされません。成功後も元のレコードは自動的には削除されません。
 
-このプロジェクトには、ASR、OCR、要約サービス、メディアダウンローダー、FFmpeg は組み込まれていません。ユーザーが明示的に処理を依頼した後で、Agent は自身の環境にあるツールを利用できます。通常の収集に FFmpeg は不要です。完全な実行規則は [Agent 実行契約](agent-workflow.md)を参照してください。
+このプロジェクトにクラウド ASR、OCR、要約サービスは組み込まれていません。MCP は収集内容のエクスポート、構造化された処理ガイド、claim 検証、接続中の Babel 拡張機能への取得依頼を提供します。Agent は `babel_clipper_acquire_source_media` の後に `babel_clipper_export_capture` を呼び、拡張機能の添付ファイルをローカルへ書き出してから FFmpeg、sherpa-onnx、LLM などの後処理を行います。Agent 自身のダウンローダー、CUA、Playwright、Puppeteer、ブラウザーのクリック操作で元メディアを取得してはいけません。完全な規則は [Agent 実行契約](agent-workflow.md)と[拡張機能取源 Spec](../../specs/Babel_Content_Clipper_Browser_Extension_Acquisition_Spec_2026-09-21.md)を参照してください。
 
 ## クイックスタート
 
@@ -176,7 +176,7 @@ Babel Content Clipper のインターフェースは、簡体字中国語（`zh-
 
 公開 Web ページのサンプルでは、次の項目を個別に検証しています。
 
-- Bilibili、YouTube：テキスト収集とメディア時間範囲の記録。どちらのサンプルでも、サイトから元動画をダウンロードしていません。
+- Bilibili、YouTube：テキスト収集とメディア時間範囲の記録。元メディアの取得は接続中の Babel 拡張機能の経路を使用し、過去の Agent 直接ダウンロード検証は現在の本番経路の証拠とはしません。
 - Zhihu、中国大学 MOOC、Coursera：公開ページのテキストと、設定した上限内の画像収集。これらのコースページのサンプルは、ログイン後のコンテンツやコース動画への対応を証明するものではありません。
 
 Windows、Linux、Firefox、Safari、リモート Agent、モバイルブラウザーは、まだ検証済みの組み合わせに含まれていません。各サイトのログイン状態、クロスオリジン iframe、Canvas、制限付きメディア、独自リーダーも個別に確認する必要があります。随時更新される[互換性マトリクス](../../compatibility.md)と[受け入れ検証範囲](../../acceptance.md)（簡体字中国語）を参照してください。
@@ -196,7 +196,7 @@ Windows、Linux、Firefox、Safari、リモート Agent、モバイルブラウ�
 |---|---|
 | `apps/extension` | Chrome MV3 拡張機能、サイドパネル、ライブラリ、収集、ライブ録画 |
 | `packages/core` | データ契約、IndexedDB、ステートマシン、時間範囲、トランザクション規則 |
-| `packages/mcp` | MCP stdio サービス、Native Messaging、ローカル broker、インストール、診断 |
+| `packages/mcp` | MCP stdio、Native Messaging、ローカル broker、インストール／診断、Capture 書き出し、ソース引き渡し、Agent ガイド |
 | `docs` | インストール、アーキテクチャ、互換性、Agent 契約、受け入れ検証、製品仕様 |
 | `scripts` | ビルド、静的チェック、テスト素材サービス、ローカルパッケージ作成 |
 | `tests` | Core、MCP、統合、ブラウザー検証 |
@@ -229,6 +229,7 @@ npm run package:release
 - [インストールと初回接続](install.md)
 - [Release 公開チェックリスト](../../release.md) — 簡体字中国語
 - [Agent 実行契約](agent-workflow.md)
+- [動画テキスト抽出 Agent ガイド（簡体字中国語）](../../agent-guides/video-text-extraction.md)
 - [アーキテクチャと境界](../../architecture.md) — 簡体字中国語
 - [互換性の範囲と検証環境](../../compatibility.md) — 簡体字中国語
 - [受け入れ検証の範囲と証拠](../../acceptance.md) — 簡体字中国語

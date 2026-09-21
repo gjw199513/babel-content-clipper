@@ -18,7 +18,7 @@
 
 Babel Content Clipper 是一套 Chrome 扩展与本地 MCP 组件。它让你在浏览网页时主动保存选中文字、图片、页面区域和音视频时间范围，再由自己的 Agent 领取任务、生成文件并回写处理结果。
 
-当前版本为 `0.1.0-alpha.1`，已提供版本化 GitHub Release 附件，同时保留源码构建和本地加载方式。它是 DSH 配套方案的一部分，也可以独立使用。
+当前版本为 `0.1.1`，已提供版本化发布附件，同时保留源码构建和本地加载方式。它是 DSH 配套方案的一部分，也可以独立使用。
 
 项目仓库：[GitHub](https://github.com/gjw199513/babel-content-clipper) · 版本下载：[GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)
 
@@ -42,7 +42,7 @@ Babel Content Clipper 是一套 Chrome 扩展与本地 MCP 组件。它让你在
     → 每条记录独立输出文件并回写结果
 ```
 
-扩展保存来源、原文或媒体位置，并管理待办与历史；Agent 负责取源、裁切、OCR、ASR、摘要或其他后续工作。查询列表和收到提醒都不会自动开始下载或处理。
+扩展保存来源、原文或媒体位置，并管理待办与历史；需要源媒体时，Agent 通过 MCP 请求已连接的 Babel 扩展取源并导出，之后才由 Agent 负责裁切、OCR、ASR、摘要或其他本地后处理。查询列表和收到提醒都不会自动开始取源或处理。
 
 ## 功能与边界
 
@@ -64,7 +64,7 @@ Babel Content Clipper 是一套 Chrome 扩展与本地 MCP 组件。它让你在
 - 输出目录按“本次任务指定 → MCP 连接默认 → 扩展全局默认”的顺序解析，单次覆盖不会修改已保存的默认值。
 - 已有结果和失败历史不会被后一次处理覆盖；成功后也不会自动清理原始记录。
 
-项目本身不内置 ASR、OCR、摘要服务、媒体下载器或 FFmpeg。Agent 可以在用户明确要求处理后调用自己已有的工具；普通采集不要求安装 FFmpeg。完整执行规则见 [Agent 执行契约](docs/agent-workflow.md)。
+项目不内置云端 ASR、OCR 或摘要服务。缺少源媒体时，Agent 通过 `babel_clipper_acquire_source_media` 调用已连接的 Babel 浏览器扩展，由扩展在后台/页面上下文获取媒体并保存为本地附件，再通过 `babel_clipper_export_capture` 导出到 Agent 输出目录。Agent 负责 FFmpeg、sherpa-onnx/SenseVoice、模型、LLM 校正和最终文件验证；不得使用 CUA、Playwright、Puppeteer、浏览器点击或自己的下载器取源。只有确实需要文字且已有内容不足时，Agent 才进入 ASR；raw、corrected、context、audit 与 manifest 分开保留到本地。完整规则见 [Agent 执行契约](docs/agent-workflow.md)、[视频文字提取指南](docs/agent-guides/video-text-extraction.md) 和[扩展侧取源 Spec](docs/specs/Babel_Content_Clipper_Browser_Extension_Acquisition_Spec_2026-09-21.md)。
 
 ## 快速开始
 
@@ -96,7 +96,7 @@ npm run build
 
 ### 3. 连接本地 MCP
 
-先在侧栏点击“展开管理”进入素材库，打开“连接与设置”，复制当前浏览器的 `profileId`。它只用于区分本机浏览器数据，不是网站账号。
+先在侧栏底部直接点击“连接设置”；如果已经打开素材库，也可以点击页面右上角的“连接设置”。进入后在“MCP 连接”卡片复制当前浏览器的 `profileId`。它只用于区分本机浏览器数据，不是网站账号。
 
 下面是 macOS + Google Chrome 的安装示例。将 `YOUR_PROFILE_ID` 和输出目录替换为自己的值：
 
@@ -131,7 +131,7 @@ node dist/node/cli.js --mode=install \
 }
 ```
 
-把 `babel-clipper-mcp.json` 中 `mcpServers` 下的条目合并到自己的 MCP 客户端配置，随后在素材库中点击“重连本地服务”，并启动或刷新客户端连接。可用下面的命令诊断完整链路：
+把 `babel-clipper-mcp.json` 中 `mcpServers` 下的条目合并到自己的 MCP 客户端配置。连接失败时，按这个明确顺序操作：点击侧栏底部或素材库右上角的“连接设置” → 在“MCP 连接”卡片点击“立即重连本地服务” → 看到“本地桥已连接” → 让 Agent 刷新 MCP。不要去来源网页里点击连接按钮。可用下面的命令诊断完整链路：
 
 ```sh
 node dist/node/cli.js --mode=doctor --profile-id YOUR_PROFILE_ID
@@ -139,12 +139,24 @@ node dist/node/cli.js --mode=doctor --profile-id YOUR_PROFILE_ID
 
 只有诊断返回 `ready: true`，并且扩展端连接成功，才表示该 `profileId` 的链路已就绪。不同浏览器和操作系统的 Native Messaging 路径、Windows 注册表步骤及故障排查见[安装与首次连接](docs/install.md)。
 
+### 版本更新与 MCP 对齐
+
+扩展和 MCP 必须来自同一个版本。更新时保留原扩展目录、配置目录和 `profileId`，在 Chrome 的扩展管理页对原卡片点击一次“重新加载”，然后让 Agent 调用 `update_mcp`。该接口会比较扩展、Core 和 MCP 的版本：
+
+- 返回 `already_current`：版本已对齐，可以继续调用业务工具。
+- 返回 `reload_extension`：重新加载原扩展卡片后再次调用 `update_mcp`。
+- 返回 `restart_mcp_host`：用原来的 MCP 配置重新启动一次 stdio 主机；不需要重新配对，不会删除 IndexedDB、任务或历史产物。
+
+版本未对齐时，业务工具会返回 `MCP_UPDATE_REQUIRED` 并停止执行，避免新旧协议混用。对齐结果也会出现在 `babel_clipper_connection_status.version_control` 中。
+
 ### 4. 完成第一次交接
 
 1. 在网页中选中文字，按 `Alt+Shift+S` 保存。
 2. 让 Agent “查询 Babel Clipper 的待处理记录”。查询本身不会领取任务。
 3. 确认目标记录后，再明确要求 Agent 处理，例如“把这一条选文保存为文本文件并回写结果”。
 4. 回到素材库查看“已处理”状态和本次产物历史。
+
+有多条待办时不需要逐条打开：在素材库使用“复制统一处理说明”，它会遍历当前来源、日期和搜索筛选下的全部 pending Job，冻结 Capture/Job ID 快照。把这份说明粘贴给已连接的 Agent 后，Agent 会按批次指南分批领取并逐条独立回写；复制动作本身不会领取或执行。清空筛选即可生成全部待办批次。
 
 ## 常用操作
 
@@ -155,6 +167,7 @@ node dist/node/cli.js --mode=doctor --profile-id YOUR_PROFILE_ID
 | 框选页面区域 | `Alt+Shift+X` |
 | 打开侧栏 | 点击浏览器工具栏中的 Babel 图标 |
 | 展开素材库 | 侧栏右上角“展开管理” |
+| 统一交给 Agent 处理当前筛选下的待办 | 素材库中的“复制统一处理说明” |
 | 配置预留、提醒、预算与输出目录 | 素材库中的“连接与设置” |
 
 macOS 键盘上的 Option 对应这里的 Alt。快捷键可能被系统或其他扩展占用，请以浏览器的扩展快捷键设置页为准。现场音画需要先勾选“本次同时保存现场音画”，并在目标网页完成当前标签页授权；在素材库页面授权不能代替目标页授权。
@@ -176,7 +189,8 @@ Babel Content Clipper 的界面可在简体中文（`zh-CN`）、English（`en`�
 
 公开网页样本中已经分别验证：
 
-- B站、YouTube：文字采集和媒体时间范围记录；相关样本没有执行站点源视频下载。
+- B站、YouTube：文字采集和媒体时间范围记录已验证；源媒体取源现在统一由已连接的 Babel 扩展完成，历史 Agent 直连下载样本不作为当前生产路径的证明。
+- 小红书：扩展会在采集时把 token-bearing 页面上下文保存在私有记录中，后续由扩展取源；旧记录若只有脱敏 URL 和 `blob:` 媒体地址，必须重新采集，不能恢复临时访问上下文。
 - 知乎、中国大学 MOOC、Coursera：公开页面的文字与预算内图片采集；相关课程页样本没有证明登录内容或课程视频兼容。
 
 Windows、Linux、Firefox、Safari、远程 Agent 和移动浏览器尚未列为已验证组合。不同网站的登录状态、跨源 iframe、Canvas、受限媒体和自定义阅读器也需要逐站核对。请查看持续更新的[兼容矩阵](docs/compatibility.md)和[验收覆盖](docs/acceptance.md)。
@@ -196,7 +210,7 @@ Windows、Linux、Firefox、Safari、远程 Agent 和移动浏览器尚未列为
 |---|---|
 | `apps/extension` | Chrome MV3 扩展、侧栏、素材库、采集与现场录制 |
 | `packages/core` | 数据契约、IndexedDB、状态机、时间范围与事务规则 |
-| `packages/mcp` | MCP stdio 服务、Native Messaging、本地 broker、安装与诊断 |
+| `packages/mcp` | MCP stdio 服务、Native Messaging、本地 broker、安装与诊断、采集导出、来源交接与 Agent 指南 |
 | `docs` | 安装、架构、兼容性、Agent 契约、验收与产品规范 |
 | `scripts` | 构建、静态检查、测试素材服务与本地打包 |
 | `tests` | Core、MCP、集成和浏览器验证 |
@@ -229,10 +243,13 @@ npm run package:release
 - [安装与首次连接](docs/install.md)
 - [Release 发布清单](docs/release.md)
 - [Agent 执行契约](docs/agent-workflow.md)
+- [统一处理待办：Agent 批次执行指南](docs/agent-guides/pending-batch-processing.md)
+- [视频文字提取：Agent 执行指南](docs/agent-guides/video-text-extraction.md)
 - [架构与边界](docs/architecture.md)
 - [兼容范围与验证环境](docs/compatibility.md)
 - [验收覆盖与证据](docs/acceptance.md)
 - [确认版产品 Spec](docs/specs/Babel_Content_Clipper_PRD_v0.1_2026-09-18-spec.md)
+- [待办统一处理独立 Spec](docs/specs/Babel_Content_Clipper_Pending_Batch_Processing_Spec_2026-09-21.md)
 - [品牌与 Logo 资源](docs/branding.md)
 - [第三方组件](THIRD_PARTY.md)
 - [使用许可方向](LICENSE-POLICY.md)

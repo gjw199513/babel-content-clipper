@@ -1,3 +1,7 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 export const BRIDGE_PROTOCOL_VERSION = 1 as const;
 
 export const NATIVE_HOST_NAME = "com.babel.content_clipper";
@@ -24,7 +28,35 @@ export const BRIDGE_CONFIG_FILE = "bridge.json";
 
 export const MCP_SERVER_NAME = "babel-content-clipper";
 
-export const MCP_SERVER_VERSION = "0.1.0-alpha.1";
+/* Keep the MCP identity on the package version so a release cannot silently
+ * ship a new extension with an old hard-coded MCP version. */
+import packageJson from "../../../package.json" with { type: "json" };
+
+export const MCP_SERVER_VERSION = packageJson.version;
+export const VERSION_CONTROL_SCHEMA = "babel.content-clipper.version.v1" as const;
+
+/** Capabilities required before the MCP can safely request source media. */
+export const REQUIRED_EXTENSION_CAPABILITIES = ["capture.acquireMedia"] as const;
+
+function readInstalledVersion(path: string): string | undefined {
+  try {
+    const value = JSON.parse(readFileSync(path, "utf8")) as { version?: unknown };
+    return typeof value.version === "string" && value.version.trim().length > 0 ? value.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read the package currently installed on disk, even if this MCP host started before an update. */
+export function installedMcpServerVersion(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const installed = [
+    join(moduleDirectory, "../../../package.json"),
+    join(moduleDirectory, "../../package.json"),
+    join(moduleDirectory, "../package.json"),
+  ].filter(existsSync).map(readInstalledVersion).find((value): value is string => value !== undefined);
+  return installed ?? MCP_SERVER_VERSION;
+}
 
 /**
  * These are transport-local methods, never forwarded to the extension's
@@ -38,4 +70,3 @@ export const BROKER_METHODS = {
 export const BRIDGE_METHODS = {
   hello: "bridge.hello",
 } as const;
-

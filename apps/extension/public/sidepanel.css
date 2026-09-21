@@ -18,6 +18,12 @@
 .reminder-notice[hidden] { display: none; }
 .reminder-notice button { min-height: 36px; }
 .eyebrow { color: var(--color-accent-deep); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
+.connection-notice { display: grid; gap: var(--space-2); border: 1px solid color-mix(in oklch, var(--color-accent-deep), var(--color-rule) 35%); border-left: 4px solid var(--color-accent-deep); padding: var(--space-3); background: var(--color-paper-3); }
+.connection-notice[hidden] { display: none; }
+.connection-notice strong { font-size: 13px; }
+.connection-notice p:not(.eyebrow) { color: var(--color-ink-2); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+.connection-notice-actions { display: grid; grid-template-columns: 1fr; gap: var(--space-2); margin-top: var(--space-1); }
+.connection-notice-actions button { min-height: 36px; font-size: 11px; }
 h1 { min-width: 0; margin-top: 2px; font-size: 1.7rem; line-height: 1; overflow-wrap: anywhere; }
 h2 { font-size: 1.05rem; }
 .capture-strip, .summary { border: 1px solid var(--color-rule); border-radius: var(--radius-lg); padding: var(--space-3); background: var(--color-paper-2); }
@@ -54,7 +60,7 @@ h2 { font-size: 1.05rem; }
 .empty-list button { min-height: 34px; color: var(--color-accent-deep); font-size: 11px; }
 .empty-mark { color: var(--color-accent-deep); font-size: 20px; }
 .skeleton-row { min-height: 54px; border-top: 1px solid var(--color-rule); background: linear-gradient(90deg, var(--color-paper-2), var(--color-paper-3), var(--color-paper-2)); background-size: 220% 100%; animation: shimmer 1.2s var(--ease-in-out) infinite; }
-.panel-footer { padding: var(--space-1) var(--space-2); color: var(--color-muted); font-size: 10px; }
+.panel-footer { align-items: center; padding: var(--space-1) var(--space-2); color: var(--color-muted); font-size: 10px; }
 .panel-footer button { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 34px; font-size: 11px; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .capture-row { grid-template-columns: auto minmax(0, 1fr); }

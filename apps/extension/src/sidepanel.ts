@@ -27,6 +27,7 @@ import {
   statusLabel,
   writeViewState,
   type LibraryViewState,
+  type UiConnectionStatus,
 } from "./ui-shared.js";
 
 const MAX_VISIBLE = 5;
@@ -43,6 +44,7 @@ const status = $("#capture-status") as HTMLElement;
 const origin = $("#page-origin") as HTMLElement;
 const recordLive = $("#record-live") as HTMLInputElement;
 const connectionStatus = $("#connection-status") as HTMLElement;
+const connectionNotice = $("#connection-notice") as HTMLElement;
 const viewLabel = $("#view-label") as HTMLElement;
 const reminder = $("#reminder-notice") as HTMLElement;
 const reminderMessage = $("#reminder-message") as HTMLElement;
@@ -85,6 +87,65 @@ function makeButton(label: string, listener: () => void): HTMLButtonElement {
   button.textContent = t(label);
   button.addEventListener("click", listener);
   return button;
+}
+
+function openConnectionSettings(): void {
+  void chrome.tabs.create({ url: chrome.runtime.getURL("library.html#settings") });
+}
+
+function renderConnectionNotice(connection: UiConnectionStatus | undefined, error?: unknown): void {
+  clear(connectionNotice);
+  const disconnected = !connection?.native.connected;
+  connectionNotice.hidden = !disconnected;
+  if (!disconnected) return;
+
+  const heading = document.createElement("strong");
+  heading.textContent = t("Agent 暂时无法读取或回写记录");
+  const message = paragraph(
+    "",
+    error
+      ? t("无法检查连接状态；请点击“打开连接设置”，在连接设置页点击“重连本地服务”，看到“本地桥已连接”后，再让 Agent 刷新 MCP。")
+      : t("请按这个顺序操作：先点击“打开连接设置”，进入页面后点击“重连本地服务”；看到“本地桥已连接”后，再让 Agent 刷新 MCP。"),
+  );
+  const actions = document.createElement("div");
+  actions.className = "connection-notice-actions";
+  let reconnectButton: HTMLButtonElement;
+  reconnectButton = makeButton("立即重连本地服务", () => void reconnectLocalService(reconnectButton));
+  reconnectButton.dataset.tone = "accent";
+  actions.append(reconnectButton, makeButton("打开连接设置", openConnectionSettings));
+  connectionNotice.className = "connection-notice";
+  connectionNotice.append(
+    paragraph("eyebrow", "MCP 连接未完成"),
+    heading,
+    message,
+    ...(error ? [paragraph("failure-card", errorMessage(error, "连接状态不可用。"))] : []),
+    actions,
+  );
+}
+
+async function reconnectLocalService(button: HTMLButtonElement): Promise<void> {
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    const response = await sendRuntime<{ ok: boolean; error?: { message?: string } }>({
+      channel: EXTENSION_CHANNEL,
+      type: "action",
+      action: "connect-native",
+    });
+    if (!response.ok) throw new Error(response.error?.message ?? t("本地桥连接失败。"));
+    const connection = await callCore("connection.status");
+    if (!connection.native.connected) throw new Error(t("重连后本地桥仍未连接。"));
+    connectionStatus.textContent = t("本地桥已连接");
+    renderConnectionNotice(connection);
+    setStatus("本地桥已连接。", "success");
+  } catch (error) {
+    connectionStatus.textContent = t("本地状态不可用");
+    renderConnectionNotice(undefined, error);
+    setStatus(errorMessage(error, "本地桥连接失败。"), "error");
+  } finally {
+    button.disabled = false;
+    button.setAttribute("aria-busy", "false");
+  }
 }
 
 function listParams(state: LibraryViewState, cursor?: string): Record<string, unknown> {
@@ -185,8 +246,9 @@ function renderListError(message: string): void {
 
 async function refresh(): Promise<void> {
   const generation = ++refreshGeneration;
+  let viewState: LibraryViewState | undefined;
   try {
-    const viewState = await readViewState();
+    viewState = await readViewState();
     if (generation !== refreshGeneration) return;
     viewLabel.textContent = viewDescription(viewState);
     const query = viewState.search.trim().toLocaleLowerCase(getLocale());
@@ -206,15 +268,22 @@ async function refresh(): Promise<void> {
     } while (cursor && query && matches.length <= MAX_VISIBLE);
     renderRows(matches, hasMore);
 
+  } catch (error) {
+    if (generation !== refreshGeneration) return;
+    renderListError(errorMessage(error, "数据库或后台服务未响应。"));
+  }
+  if (generation !== refreshGeneration || !viewState) return;
+  try {
     const connection = await callCore("connection.status");
     if (generation !== refreshGeneration) return;
     connectionStatus.textContent = connection.native.connected
       ? t("本地桥已连接")
       : t("本地记录可用 · 本地桥未连接");
+    renderConnectionNotice(connection);
   } catch (error) {
     if (generation !== refreshGeneration) return;
-    renderListError(errorMessage(error, "数据库或后台服务未响应。"));
     connectionStatus.textContent = t("本地状态不可用");
+    renderConnectionNotice(undefined, error);
   }
 }
 
@@ -321,7 +390,7 @@ function installPanel(): void {
     void chrome.tabs.create({ url: chrome.runtime.getURL("help.html") });
   });
   $("#settings").addEventListener("click", () => {
-    void chrome.tabs.create({ url: chrome.runtime.getURL("library.html#settings") });
+    openConnectionSettings();
   });
   $("#dismiss-reminder").addEventListener("click", () => {
     void chrome.storage.local.remove(REMINDER_NOTICE_KEY).then(() => showReminder(undefined));

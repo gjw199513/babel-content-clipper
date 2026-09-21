@@ -28,6 +28,7 @@
         <p id="reminder-message"></p>
         <button id="dismiss-reminder" type="button" data-tone="quiet" data-i18n="关闭提示">关闭提示</button>
       </section>
+      <section id="connection-notice" class="connection-notice" aria-live="polite" hidden></section>
       <section class="capture-strip" aria-labelledby="capture-heading">
         <div class="section-head"><div><p class="eyebrow" data-i18n="当前页面">当前页面</p><h2 id="capture-heading" data-i18n="快速采集">快速采集</h2></div><span id="page-origin" class="source-chip" data-i18n="读取中…">读取中…</span></div>
         <div class="capture-actions">
@@ -45,7 +46,7 @@
         <div class="section-head"><div><h2 id="summary-heading" data-i18n="最近记录">最近记录</h2><p id="view-label" class="summary-context" data-i18n="全部">全部</p></div><button id="refresh" type="button" data-tone="quiet" data-i18n="刷新">刷新</button></div>
         <div id="capture-list" class="capture-list" aria-live="polite"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
       </section>
-      <footer class="panel-footer"><span id="connection-status" data-i18n="本地记录可用">本地记录可用</span><button id="settings" type="button" data-tone="quiet"><span data-i18n="设置">设置</span><span aria-hidden="true">↗</span></button></footer>
+      <footer class="panel-footer"><span id="connection-status" data-i18n="本地记录可用">本地记录可用</span><button id="settings" type="button" data-tone="quiet" title="打开连接设置" aria-label="打开连接设置" data-i18n="连接设置" data-i18n-title="打开连接设置" data-i18n-aria-label="打开连接设置"><span data-i18n="连接设置">连接设置</span><span aria-hidden="true">↗</span></button></footer>
     </main>
     <script type="module" src="sidepanel.js"></script>
   </body>

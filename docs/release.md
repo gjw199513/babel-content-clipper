@@ -34,6 +34,6 @@ release/source-manifest.json
 release/SHA256SUMS
 ```
 
-在 [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases) 创建与版本一致的 Release，例如 `v0.1.0-alpha.1`。至少上传扩展 ZIP、对应 release notes 和 `SHA256SUMS`；若该版本支持 MCP 完整链路，再上传 tgz。上传后应从 Release 页面重新下载 ZIP，核对校验和，并确认解压目录根部存在 `manifest.json`。
+在 [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases) 创建与版本一致的 Release，例如 `v0.1.1`。至少上传扩展 ZIP、对应 release notes 和 `SHA256SUMS`；若该版本支持 MCP 完整链路，再上传 tgz。上传后应从 Release 页面重新下载 ZIP，核对校验和，并确认解压目录根部存在 `manifest.json`。
 
 脚本只准备本地发布附件，不会自动上传、创建远程 Release 或推送代码。

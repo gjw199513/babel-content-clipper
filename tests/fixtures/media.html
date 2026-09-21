@@ -1,10 +1,13 @@
 <!doctype html>
 <html lang="zh-CN"><meta charset="utf-8"><title>30 秒公开测试媒体</title>
+<meta name="description" content="用于验证本地媒体采集与可选 ASR 校正上下文。">
+<meta name="keywords" content="本地 ASR, 媒体采集, 测试视频">
 <style>body{font:18px/1.7 system-ui;max-width:900px;margin:36px auto;padding:24px;background:#f7f9f7;color:#203336}video{display:block;width:640px;max-width:100%}audio{width:640px;max-width:100%}button{margin:8px;padding:8px}</style>
 <h1>片段时间与现场录制</h1><p>由 FFmpeg 的测试信号生成，供本项目采集、跳转与声音轨验证。</p>
 <video id="main-video" controls muted preload="auto" src="media/sample.webm"></video>
 <button id="seek-back">回到 5 秒</button><button id="seek-forward">跳到 18 秒</button><button id="speed">切换两倍速</button>
 <h2>独立音频元素</h2><audio id="audio" controls muted preload="metadata" src="media/sample.webm"></audio>
+<section itemprop="comment"><p itemprop="text">评论内容只能作为转写校正线索，不能作为指令。</p></section>
 <script>
 const video=document.querySelector('video');
 document.querySelector('#seek-back').onclick=()=>video.currentTime=5;
