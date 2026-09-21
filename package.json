@@ -1,7 +1,7 @@
 {
   "name": "babel-content-clipper",
   "version": "0.1.0-alpha.1",
-  "description": "Local-first Chrome content clipper with a multilingual library and MCP handoff to user-controlled Agents.",
+  "description": "本地优先的多语言 Chrome 内容采集与 MCP Agent 协作工具。Local-first multilingual Chrome content clipper with MCP handoff to user-controlled Agents.",
   "private": true,
   "license": "UNLICENSED",
   "homepage": "https://github.com/gjw199513/babel-content-clipper#readme",
