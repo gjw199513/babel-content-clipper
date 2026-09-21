@@ -18,7 +18,7 @@
 
 Babel Content Clipper 是一套 Chrome 擴充功能與本機 MCP 元件。瀏覽網頁時，你可以主動儲存選取的文字、圖片、頁面區域及影音時間範圍，再由自己的 Agent 領取工作、產生檔案並回寫處理結果。
 
-目前版本為 `0.1.0-alpha.1`，主要以原始碼建置及本機載入方式使用。它是 DSH 配套方案的一部分，也可獨立使用。
+目前版本為 `0.1.0-alpha.1`，已提供版本化 GitHub Release 附件，同時保留原始碼建置及本機載入方式。它是 DSH 配套方案的一部分，也可獨立使用。
 
 專案儲存庫：[GitHub](https://github.com/gjw199513/babel-content-clipper) · 版本下載：[GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)
 

@@ -18,7 +18,7 @@
 
 Babel Content Clipper combines a Chrome extension with a local MCP component. While browsing, you can deliberately save selected text, images, page regions, and audio or video time ranges. Your own Agent can then claim a job, create files, and write the result back.
 
-The current version is `0.1.0-alpha.1` and is intended mainly for source builds and local loading. It is part of the DSH companion solution, but it can also be used on its own.
+The current version is `0.1.0-alpha.1`, with versioned GitHub Release assets as well as source-build and local-loading options. It is part of the DSH companion solution, but it can also be used on its own.
 
 Repository: [GitHub](https://github.com/gjw199513/babel-content-clipper) · Downloads: [GitHub Releases](https://github.com/gjw199513/babel-content-clipper/releases)
 

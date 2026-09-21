@@ -37,4 +37,4 @@
 
 本地首版功能实现与所列验收已完成：17 个测试文件的 76 项核心/集成测试通过，71 个 TypeScript 文件的 LSP 检查零错误、零警告；静音浏览器、真实五站、Native Messaging、SDK/Inspector、清理及最新现场录制分别有证据。具体测试范围与保留的限制见 [验收覆盖](acceptance.md)，不将部分页面成功外推为整站兼容。
 
-最终发行物由完整构建、包校验、干净目录安装和 SHA-256/源码清单检查生成；构建消费事实单列在 `artifacts/validation/release-validation.json`。只生成本地扩展 ZIP 与 MCP tgz，未执行 GitHub/npm 发布。正式许可文本继续按用户要求后置。
+最终发行物由完整构建、包校验、干净目录安装和 SHA-256/源码清单检查生成；构建消费事实单列在 `artifacts/validation/release-validation.json`。`v0.1.0-alpha.1` 的扩展 ZIP 与 MCP tgz 已作为 GitHub 预发布附件公开，未发布 npm 包。正式许可文本继续按用户要求后置。
