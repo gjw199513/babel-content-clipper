@@ -1,0 +1,20 @@
+{
+  "extensionDescription": {
+    "message": "Save selected text, images, region screenshots and audio/video ranges for your own Agent."
+  },
+  "actionTitle": {
+    "message": "Open Babel Content Clipper"
+  },
+  "captureSelection": {
+    "message": "Capture selected text"
+  },
+  "captureMedia": {
+    "message": "Start or stop a media clip"
+  },
+  "captureRegion": {
+    "message": "Capture a page region"
+  },
+  "openLibrary": {
+    "message": "Open Babel Content Clipper library"
+  }
+}

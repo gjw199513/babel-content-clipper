@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Babel Content Clipper</title>
+  <desc id="desc">An ivory B with a detached amber clipping corner on a dark rounded square.</desc>
+  <defs>
+    <clipPath id="clipped-letter">
+      <path d="M0 0H48L128 80V128H0Z"/>
+    </clipPath>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#2d261e"/>
+  <path clip-path="url(#clipped-letter)" fill="#fff8e8" fill-rule="evenodd" d="M33 26H62C80 26 90 34 90 47C90 54 86 60 79 63C89 66 95 73 95 82C95 95 84 102 66 102H33ZM49 41V57H62C70 57 74 54 74 49C74 44 70 41 62 41ZM49 71V87H66C74 87 79 84 79 79C79 74 74 71 66 71Z"/>
+  <path d="M78 23H99V44Z" fill="#e8aa4f"/>
+</svg>

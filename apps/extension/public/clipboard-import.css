@@ -1,0 +1,19 @@
+.paste-dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  padding: var(--space-6);
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-lg);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  overflow: auto;
+}
+.paste-dialog::backdrop { background: var(--color-backdrop); }
+.paste-form { display: grid; gap: var(--space-4); }
+.paste-form h2 { font-size: 1.5rem; }
+.paste-help { font-size: 13px; color: var(--color-ink-2); }
+.paste-form input, .paste-form textarea { width: 100%; min-width: 0; }
+.paste-form textarea { min-height: 10rem; max-height: 45dvh; resize: vertical; padding: var(--space-3); font-weight: 400; }
+.paste-error { font-size: 13px; color: var(--color-error); overflow-wrap: anywhere; }
+.paste-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }

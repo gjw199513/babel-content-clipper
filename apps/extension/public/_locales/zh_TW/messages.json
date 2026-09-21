@@ -1,0 +1,20 @@
+{
+  "extensionDescription": {
+    "message": "主動儲存網頁選文、圖片、區域截圖和影音範圍，交給自己的 Agent 處理。"
+  },
+  "actionTitle": {
+    "message": "開啟 Babel Content Clipper"
+  },
+  "captureSelection": {
+    "message": "擷取選取文字"
+  },
+  "captureMedia": {
+    "message": "開始或結束記錄媒體片段"
+  },
+  "captureRegion": {
+    "message": "框選頁面區域"
+  },
+  "openLibrary": {
+    "message": "開啟 Babel Content Clipper 素材庫"
+  }
+}

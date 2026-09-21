@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title data-i18n="Babel Content Clipper 素材库">Babel Content Clipper 素材库</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+    <link rel="stylesheet" href="tokens.css">
+    <link rel="stylesheet" href="library.css">
+  </head>
+  <body>
+    <main class="library-shell">
+      <header class="library-header">
+        <div class="library-intro"><div class="library-brand"><img class="brand-mark" src="icons/logo.svg" width="36" height="36" alt=""><p class="eyebrow" data-i18n="Babel Content Clipper · 素材库">Babel Content Clipper · 素材库</p></div><h1 data-i18n="素材库">素材库</h1><p class="lede" data-i18n="按来源整理你明确留下的文字、图片、区域截图和媒体区间。">按来源整理你明确留下的文字、图片、区域截图和媒体区间。</p></div>
+        <div class="header-tools">
+          <div class="header-preferences"><div id="language-control" class="language-slot"></div><button id="help" type="button" data-tone="quiet" data-i18n="关于与使用帮助">关于与使用帮助</button></div>
+          <div class="header-actions"><button id="settings" type="button" data-tone="quiet"><span data-i18n="连接与设置">连接与设置</span><span aria-hidden="true">↗</span></button></div>
+          <input id="import-file" class="visually-hidden" type="file" accept="application/json,.json">
+        </div>
+      </header>
+      <nav class="view-tabs" aria-label="记录视图" data-i18n-aria-label="记录视图"><button class="tab is-active" data-view="all" type="button" data-i18n="全部">全部</button><button class="tab" data-view="pending" type="button" data-i18n="待处理">待处理</button><button class="tab" data-view="history" type="button" data-i18n="历史">历史</button><button class="tab" data-view="saved" type="button" data-i18n="仅收藏">仅收藏</button></nav>
+      <section class="library-toolbar" aria-label="筛选与搜索" data-i18n-aria-label="筛选与搜索"><label class="search-field"><span data-i18n="搜索记录">搜索记录</span><input id="search" type="search" placeholder="标题、来源或原文" data-i18n-placeholder="标题、来源或原文" autocomplete="off"></label><label><span data-i18n="来源">来源</span><select id="source-filter"><option value="" data-i18n="全部来源">全部来源</option></select></label><label><span data-i18n="日期">日期</span><select id="date-filter"><option value="" data-i18n="全部日期">全部日期</option><option value="today" data-i18n="今天">今天</option><option value="week" data-i18n="最近 7 天">最近 7 天</option></select></label><button id="clear-filters" type="button" data-tone="quiet" data-i18n="清除">清除</button></section>
+      <details class="maintenance-panel">
+        <summary data-i18n="备份与维护">备份与维护</summary>
+        <div class="maintenance-content">
+          <section class="backup-toolbar" aria-label="备份" data-i18n-aria-label="备份"><label class="backup-option"><input id="include-attachments" type="checkbox"> <span data-i18n="备份包含内部附件数据">备份包含内部附件数据</span></label><div class="backup-actions"><button id="export" type="button" aria-label="导出备份" data-i18n="导出备份" data-i18n-aria-label="导出备份">导出备份</button><button id="import" type="button" aria-label="导入备份" data-i18n="导入备份" data-i18n-aria-label="导入备份">导入备份</button></div></section>
+          <section class="cleanup-toolbar" aria-label="已处理记录清理" data-i18n-aria-label="已处理记录清理"><p><strong data-i18n="清理插件内记录">清理插件内记录</strong><span data-i18n="先生成预览，确认后删除；外部成品文件始终保留。">先生成预览，确认后删除；外部成品文件始终保留。</span></p><label><input id="include-failed-cleanup" type="checkbox"> <span data-i18n="同时包含处理失败记录">同时包含处理失败记录</span></label><button id="cleanup-all" type="button" data-tone="danger" aria-label="预览清理全部已处理" data-i18n="预览清理全部已处理" data-i18n-aria-label="预览清理全部已处理">预览清理全部已处理</button></section>
+        </div>
+      </details>
+      <div class="library-grid"><section id="library-list" class="library-list" aria-live="polite"></section><aside id="detail" class="detail-panel" aria-live="polite"><div class="empty-detail"><span class="empty-mark">⌁</span><h2 data-i18n="选择一条记录">选择一条记录</h2><p data-i18n="详情会显示完整原文、来源定位、范围快照、处理历史与附件事实。">详情会显示完整原文、来源定位、范围快照、处理历史与附件事实。</p></div></aside></div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+    <script type="module" src="library.js"></script>
+  </body>
+</html>

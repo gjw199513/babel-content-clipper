@@ -1,0 +1,20 @@
+{
+  "extensionDescription": {
+    "message": "선택한 텍스트, 이미지, 영역 캡처와 오디오·동영상 시간 범위를 저장하고 자신의 Agent에게 전달하세요."
+  },
+  "actionTitle": {
+    "message": "Babel Content Clipper 열기"
+  },
+  "captureSelection": {
+    "message": "선택한 텍스트 수집"
+  },
+  "captureMedia": {
+    "message": "미디어 구간 기록 시작 또는 종료"
+  },
+  "captureRegion": {
+    "message": "페이지 영역 캡처"
+  },
+  "openLibrary": {
+    "message": "Babel Content Clipper 라이브러리 열기"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "name": "babel-content-clipper",
+  "version": "0.1.0-alpha.1",
+  "description": "Local-first Chrome content clipper with a multilingual library and MCP handoff to user-controlled Agents.",
+  "private": true,
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/gjw199513/babel-content-clipper#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gjw199513/babel-content-clipper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gjw199513/babel-content-clipper/issues"
+  },
+  "keywords": [
+    "chrome-extension",
+    "content-clipper",
+    "mcp",
+    "local-first",
+    "agent"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "babel-content-clipper": "./dist/node/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE-POLICY.md",
+    "THIRD_PARTY.md",
+    "docs/"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:extension": "node scripts/build.mjs --extension-only",
+    "build:mcp": "node scripts/build.mjs --node-only",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:core": "vitest run tests/core",
+    "test:mcp": "vitest run tests/mcp",
+    "test:browser": "playwright test --config tests/browser/playwright.config.ts",
+    "test:platform": "playwright test --config tests/browser/platform.config.ts",
+    "lsp": "node scripts/lsp-check.mjs",
+    "check": "npm run typecheck && npm test && npm run lsp && npm run build",
+    "mcp": "node dist/node/cli.js --mode=mcp",
+    "doctor": "node dist/node/cli.js --mode=doctor",
+    "fixtures": "node scripts/serve-fixtures.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:install": "node scripts/verify-install.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
+    "package:release": "npm run verify:package && node scripts/package-release.mjs && npm run verify:release"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "dompurify": "3.4.15",
+    "idb": "8.0.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/chrome": "^0.3.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5",
+    "fflate": "0.8.3",
+    "tsx": "^4.0.0",
+    "typescript": "~5.9.3",
+    "typescript-language-server": "5.1.3",
+    "vitest": "5.0.1"
+  }
+}

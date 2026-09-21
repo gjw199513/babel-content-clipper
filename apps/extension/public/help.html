@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Babel Content Clipper</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+    <link rel="stylesheet" href="tokens.css">
+    <link rel="stylesheet" href="help.css">
+  </head>
+  <body>
+    <main class="help-shell">
+      <header class="help-header">
+        <div class="help-brand"><img src="icons/logo.svg" width="48" height="48" alt=""><div><p class="eyebrow" data-i18n="关于与使用帮助">About &amp; help</p><h1>Babel Content Clipper</h1></div></div>
+        <div id="language-control"></div>
+      </header>
+      <p class="help-lede" data-i18n="把网页里的片段，交给你的 Agent。">Bring snippets from the web to your Agent.</p>
+      <p data-i18n="在侧栏保存选文、图片、区域截图和媒体时间范围，再由你自己的 Agent 处理并回写结果。"></p>
+      <nav class="help-actions" data-i18n-aria-label="帮助导航" aria-label="Help navigation">
+        <button id="open-library" type="button" data-tone="accent" data-i18n="打开素材库">Open library</button>
+        <button id="open-settings" type="button" data-i18n="打开连接设置">Open connection settings</button>
+        <a id="install-doc" download data-i18n="完整安装文档">Full installation guide</a>
+      </nav>
+      <article id="help-content"></article>
+      <footer>Babel Content Clipper · <span id="version"></span></footer>
+    </main>
+    <script type="module" src="help.js"></script>
+  </body>
+</html>

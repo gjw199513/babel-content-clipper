@@ -1,0 +1,20 @@
+{
+  "extensionDescription": {
+    "message": "選択したテキスト、画像、範囲スクリーンショット、音声・動画の時間範囲を保存し、自分の Agent に渡せます。"
+  },
+  "actionTitle": {
+    "message": "Babel Content Clipper を開く"
+  },
+  "captureSelection": {
+    "message": "選択テキストを保存"
+  },
+  "captureMedia": {
+    "message": "メディアの範囲記録を開始・終了"
+  },
+  "captureRegion": {
+    "message": "ページの範囲スクリーンショット"
+  },
+  "openLibrary": {
+    "message": "Babel Content Clipper ライブラリを開く"
+  }
+}

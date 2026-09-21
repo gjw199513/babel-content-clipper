@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>采集边界测试：Canvas 与缺失图片</title>
+<style>
+  body { max-width: 780px; margin: 36px auto; padding: 24px; font: 18px/1.8 system-ui; color: #26352c; background: #faf8f1; }
+  canvas { display: block; width: 480px; height: 180px; border: 1px solid #667665; }
+  figure { margin: 24px 0; padding: 16px; background: white; }
+  img { width: 160px; height: 100px; object-fit: contain; }
+</style>
+<h1>采集边界测试</h1>
+<p>下面的画布没有 DOM 原文，必须保存为截图并明确标为图片。</p>
+<canvas id="canvas-only" width="480" height="180" aria-label="用于截图验证的画布"></canvas>
+<section id="missing-image-selection">
+  <h2>正文与图片引用应该一起保留</h2>
+  <p>这段文字含有一张故意无法取得字节的图片。文字应当保存，图片缺失应当明确说明。</p>
+  <figure><img id="unavailable-image" src="/missing-image-for-negative-test.png" alt="故意不存在的测试图片"><figcaption>图片请求预期返回 404。</figcaption></figure>
+</section>
+<section id="many-images-selection">
+  <h2>超出单次抓图数量时保留引用与缺失事实</h2>
+  <p>下方十张不同 URL 的图片用于检查数量预算，不能悄悄丢掉被选中的后几张图片。</p>
+</section>
+<script>
+  const context = document.querySelector('#canvas-only').getContext('2d');
+  context.fillStyle = '#e8f0df';
+  context.fillRect(0, 0, 480, 180);
+  context.fillStyle = '#273f2b';
+  context.font = '26px system-ui';
+  context.fillText('CANVAS PIXELS — NOT DOM TEXT', 20, 70);
+  context.fillStyle = '#8ea879';
+  context.fillRect(20, 104, 280, 28);
+  for (let index = 1; index <= 10; index++) {
+    const image = document.createElement('img');
+    image.src = `/sample.svg?image=${index}`;
+    image.alt = `预算图片 ${index}`;
+    document.querySelector('#many-images-selection').append(image);
+  }
+</script>
+</html>

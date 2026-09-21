@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>测试阅读器 · 第一章</title>
+<style>body{font:20px/1.9 Georgia,serif;max-width:700px;margin:48px auto;padding:24px;background:#fffbed;color:#343226}button{padding:10px;margin:8px}#menu{background:#e5efe9;padding:8px}</style>
+<h1 id="chapter">第一章</h1><article id="reader" data-chapter="one"><p id="text">第一章的选中文字只属于第一章。读者应当仍然可以使用原阅读器的划线和笔记菜单。</p></article>
+<div id="menu" hidden><button id="annotate">原生划线</button><button id="clear">模拟阅读器清空选区</button></div>
+<button id="next">下一章</button><p id="notice" role="status"></p>
+<script>
+document.addEventListener('selectionchange',()=>{if(String(getSelection())) document.querySelector('#menu').hidden=false});
+document.querySelector('#annotate').onclick=()=>document.querySelector('#notice').textContent='原阅读器批注操作正常';
+document.querySelector('#clear').onclick=()=>getSelection().removeAllRanges();
+document.querySelector('#next').onclick=()=>{history.pushState({},'', '?chapter=two'); document.title='测试阅读器 · 第二章'; document.querySelector('#chapter').textContent='第二章'; document.querySelector('#reader').dataset.chapter='two'; document.querySelector('#text').textContent='第二章有新的内容。切换章节后不得再次保存上一章的选择快照。';getSelection().removeAllRanges();document.querySelector('#menu').hidden=true;};
+</script></html>

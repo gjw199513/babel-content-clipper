@@ -1,0 +1,15 @@
+node_modules/
+dist/
+release/
+artifacts/
+test-results/
+playwright-report/
+.DS_Store
+/.hallmark/
+/docs/evaluation-*.md
+/.tmp-*.mjs
+/babel-clipper-mcp.json
+*.log
+.env
+.env.*
+!.env.example

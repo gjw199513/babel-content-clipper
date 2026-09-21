@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title data-i18n="Babel Content Clipper · 素材夹">Babel Content Clipper · 素材夹</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+    <link rel="stylesheet" href="tokens.css">
+    <link rel="stylesheet" href="sidepanel.css">
+  </head>
+  <body>
+    <main class="panel-shell">
+      <header class="panel-header">
+        <div class="panel-brand">
+          <img class="brand-mark" src="icons/logo.svg" width="48" height="48" alt="">
+          <div>
+            <p class="eyebrow">Babel Content Clipper</p>
+            <h1 data-i18n="素材夹">素材夹</h1>
+          </div>
+        </div>
+        <div class="panel-header-actions">
+          <div id="language-control"></div>
+          <button id="help" type="button" data-tone="quiet" title="打开帮助" aria-label="打开帮助" data-i18n="帮助" data-i18n-title="打开帮助" data-i18n-aria-label="打开帮助">帮助</button>
+          <button id="open-library" type="button" data-tone="quiet" title="展开管理" aria-label="展开管理" data-i18n-title="展开管理" data-i18n-aria-label="展开管理"><span data-i18n="素材库">素材库</span><span aria-hidden="true">↗</span></button>
+        </div>
+      </header>
+      <section id="reminder-notice" class="reminder-notice" aria-live="polite" hidden>
+        <p id="reminder-message"></p>
+        <button id="dismiss-reminder" type="button" data-tone="quiet" data-i18n="关闭提示">关闭提示</button>
+      </section>
+      <section class="capture-strip" aria-labelledby="capture-heading">
+        <div class="section-head"><div><p class="eyebrow" data-i18n="当前页面">当前页面</p><h2 id="capture-heading" data-i18n="快速采集">快速采集</h2></div><span id="page-origin" class="source-chip" data-i18n="读取中…">读取中…</span></div>
+        <div class="capture-actions">
+          <button id="capture-selection" type="button" data-tone="accent" data-i18n="收集选文">收集选文</button>
+          <button id="capture-media" type="button" data-i18n="标记片段">标记片段</button>
+          <button id="capture-region" type="button" data-i18n="框选截图">框选截图</button>
+        </div>
+        <details class="capture-options">
+          <summary data-i18n="更多采集选项">更多采集选项</summary>
+          <label class="record-toggle"><input id="record-live" type="checkbox"> <span data-i18n="本次同时保存现场音画">本次同时保存现场音画</span></label>
+        </details>
+        <p id="capture-status" class="status" role="status" aria-live="polite" data-i18n="选择页面内容后即可保存到素材夹。">选择页面内容后即可保存到素材夹。</p>
+      </section>
+      <section class="summary" aria-labelledby="summary-heading">
+        <div class="section-head"><div><h2 id="summary-heading" data-i18n="最近记录">最近记录</h2><p id="view-label" class="summary-context" data-i18n="全部">全部</p></div><button id="refresh" type="button" data-tone="quiet" data-i18n="刷新">刷新</button></div>
+        <div id="capture-list" class="capture-list" aria-live="polite"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>
+      </section>
+      <footer class="panel-footer"><span id="connection-status" data-i18n="本地记录可用">本地记录可用</span><button id="settings" type="button" data-tone="quiet"><span data-i18n="设置">设置</span><span aria-hidden="true">↗</span></button></footer>
+    </main>
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>
